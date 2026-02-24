@@ -27,6 +27,8 @@ Usage:
     python -m src.main flag-good          # Interactive batch flagging
     python -m src.main show-exemplars     # Show flagged exemplary content
     python -m src.main add-exemplar       # Write a manual gold-standard exemplar
+    python -m src.main compliance-check   # Run publishing law compliance checks
+    python -m src.main compliance-check --fix  # Check + auto-fix queue items
     python -m src.main health-check       # Run system health checks
 """
 
@@ -1467,6 +1469,107 @@ def add_exemplar(platform, section, title, notes):
         "article": title,
         "chars": len(clean_text),
         "exemplar_id": exemplar.id,
+    })
+
+
+@cli.command(name="compliance-check")
+@click.option("--fix", is_flag=True, help="Apply auto-fixes and save queue")
+@click.option("--item", "item_id", default=None, help="Check a specific queue item by ID")
+def compliance_check_cmd(fix, item_id):
+    """Run publishing law compliance checks on the active queue.
+
+    Validates pending text posts against fair-use, attribution, and
+    copyright principles.  Shows results in a terminal table.
+
+    Examples:
+        python -m src.main compliance-check              # check active queue
+        python -m src.main compliance-check --fix        # check + auto-fix
+        python -m src.main compliance-check --item ID    # check specific item
+    """
+    from src.scheduler import find_active_queue, WeekQueue
+    from src.compliance import run_compliance_check, print_compliance_report
+
+    config = _load_config()
+
+    console.print(Panel.fit(
+        "[bold cyan]The Docket — Compliance Check[/bold cyan]",
+        border_style="cyan",
+    ))
+
+    comp_cfg = config.get("compliance", {})
+    if not comp_cfg.get("enabled", False):
+        console.print("[yellow]Compliance is disabled in config.yaml. "
+                      "Set compliance.enabled: true to activate.[/yellow]")
+        return
+
+    queue_path = find_active_queue(QUEUE_DIR)
+    if not queue_path:
+        console.print("[red]No active queue found. Run 'schedule' first.[/red]")
+        return
+
+    queue = WeekQueue.load(queue_path)
+    console.print(f"Queue: [bold]{queue_path.name}[/bold] "
+                  f"({len(queue.items)} items)")
+
+    # Filter to target items
+    if item_id:
+        targets = [i for i in queue.items if i.id == item_id]
+        if not targets:
+            console.print(f"[red]Item '{item_id}' not found in queue.[/red]")
+            return
+    else:
+        targets = [i for i in queue.items
+                   if i.content_type == "text" and i.status == "pending"]
+
+    if not targets:
+        console.print("[dim]No pending text items to check.[/dim]")
+        return
+
+    # Override auto_fix based on --fix flag
+    check_config = dict(config)
+    if not fix:
+        # Don't auto-fix unless --fix is passed
+        if "compliance" in check_config:
+            check_config["compliance"] = dict(check_config["compliance"])
+            check_config["compliance"]["auto_fix"] = False
+
+    results = []
+    modified = False
+    for item in targets:
+        result = run_compliance_check(
+            post_text=item.text,
+            source_text=None,
+            article_url=item.url or None,
+            platform=item.platform,
+            config=check_config if not fix else config,
+        )
+        results.append((item.id, result))
+
+        if fix and result.fixed_text:
+            item.compliance_original = item.text
+            item.text = result.fixed_text
+            modified = True
+
+        item.compliance_status = result.status
+        item.compliance_detail = result.summary
+
+        if fix and result.status == "blocked":
+            item.status = "blocked"
+            modified = True
+
+    print_compliance_report(results)
+
+    if fix and modified:
+        queue.save(queue_path)
+        console.print(f"\n[green]Queue updated with compliance fixes.[/green]")
+    elif fix:
+        console.print(f"\n[dim]No fixes needed.[/dim]")
+
+    _log_run("compliance-check", {
+        "queue": queue_path.name,
+        "checked": len(results),
+        "fixed": fix,
+        "results": {item_id: r.status for item_id, r in results},
     })
 
 

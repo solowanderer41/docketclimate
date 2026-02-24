@@ -894,7 +894,7 @@ DRAFT HOOK:
 
 {exemplar_block}
 
-Rewrite the hook to match the quality and tone of the exemplars above. Keep the same factual content but sharpen the language, pacing, and impact. Must fit in {max_chars} characters (including line breaks). Return ONLY the rewritten hook text, no explanation."""
+Rewrite the hook to match the quality and tone of the exemplars above. Keep the same factual content but sharpen the language, pacing, and impact. Ensure the hook paraphrases rather than quoting verbatim from the article. Must fit in {max_chars} characters (including line breaks). Return ONLY the rewritten hook text, no explanation."""
 
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -962,6 +962,17 @@ def _generate_hooks_llm(
     platform_budgets = "\n".join(budget_lines)
     platform_names = ", ".join(platforms.keys())
 
+    # Build compliance guidelines block (best-effort)
+    compliance_block = ""
+    try:
+        from src.compliance import build_compliance_guidelines
+        with open(Path(__file__).parent.parent / "config.yaml") as _ccf:
+            _cc_cfg = yaml.safe_load(_ccf).get("compliance", {})
+        if _cc_cfg.get("prompt_enrichment", False):
+            compliance_block = build_compliance_guidelines("hook")
+    except Exception:
+        pass
+
     # Build the article context
     article_text = article.summary or article.text or ""
     if len(article_text) > 1500:
@@ -991,6 +1002,8 @@ RULES:
 - Open with a sensory detail, statistical gut-punch, or "end of an era" sentiment
 - No hashtags, no links, no emoji, no "BREAKING" or "ICYMI"
 - Each platform gets a DIFFERENT angle — vary the opening and structure
+
+{compliance_block}
 
 Return ONLY a JSON object mapping platform name to hook text. No markdown fences, no explanation.
 Example format: {{"twitter": "hook text...", "bluesky": "hook text...", "threads": "hook text..."}}"""
@@ -1547,6 +1560,17 @@ def _generate_body_slides_llm(article: Article, hook: str) -> dict | None:
         _example_vos = '"spoken line 1", "spoken line 2", "spoken line 3", "spoken line 4"'
         _example_imgs = '"prompt 1", "prompt 2", "prompt 3", "prompt 4", "prompt 5"'
 
+    # Build compliance guidelines for video scripts (best-effort)
+    video_compliance_block = ""
+    try:
+        from src.compliance import build_compliance_guidelines
+        with open(Path(__file__).parent.parent / "config.yaml") as _vcf:
+            _vc_cfg = yaml.safe_load(_vcf).get("compliance", {})
+        if _vc_cfg.get("prompt_enrichment", False):
+            video_compliance_block = build_compliance_guidelines("video")
+    except Exception:
+        pass
+
     prompt = f"""You are an investigative documentarian and "The Observational Insider." Your task is to adapt a climate journalism story into a vertical video script that feels like a high-end cinematic short.
 
 VOICE:
@@ -1600,6 +1624,8 @@ IMAGE PROMPT RULES:
 - Include specific visual details: colors, materials, weather, time of day, scale
 - Portrait orientation (9:16 vertical)
 - Each prompt should depict a different scene matching its body slide
+
+{video_compliance_block}
 
 {exemplar_block}
 Return ONLY valid JSON. No markdown, no explanation."""

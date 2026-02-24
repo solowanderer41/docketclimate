@@ -147,6 +147,54 @@ def _process_items(
             )
             continue
 
+        # Skip items blocked by compliance checks at schedule time
+        if getattr(item, "status", "") == "blocked":
+            console.print(
+                f"  [dim]Skip {item.platform} (compliance blocked): "
+                f"{item.article_title[:40]}[/dim]"
+            )
+            continue
+
+        # Pre-publication compliance gate (catch-up check for items
+        # that bypassed schedule-time validation, e.g. old queue files)
+        if getattr(item, "compliance_status", None) is None:
+            try:
+                comp_cfg = config.get("compliance", {})
+                if comp_cfg.get("enabled", False):
+                    from src.compliance import run_compliance_check
+
+                    result_comp = run_compliance_check(
+                        post_text=item.text,
+                        source_text=None,
+                        article_url=item.url or None,
+                        platform=item.platform,
+                        config=config,
+                    )
+                    item.compliance_status = result_comp.status
+                    item.compliance_detail = result_comp.summary
+
+                    if result_comp.status == "blocked":
+                        queue.mark_failed(
+                            item.id,
+                            f"Compliance blocked: {result_comp.summary}",
+                        )
+                        queue.save(queue_path)
+                        console.print(
+                            f"  [red]✗ {item.platform}[/red] "
+                            f"{item.article_title[:40]}: compliance blocked"
+                        )
+                        continue
+
+                    if result_comp.fixed_text:
+                        item.compliance_original = item.text
+                        item.text = result_comp.fixed_text
+                        console.print(
+                            f"  [cyan]↻ {item.platform}[/cyan] "
+                            f"{item.article_title[:40]}: compliance auto-fixed"
+                        )
+            except Exception:
+                pass  # Compliance must never break the pipeline
+
         # Post to platform
         success, result = _post_item(item, config)
 

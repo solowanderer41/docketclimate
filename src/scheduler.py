@@ -47,11 +47,14 @@ class QueueItem:
     hashtags: list[str] = field(default_factory=list)
     scheduled_time: str | None = None  # ISO datetime w/ tz: "2026-02-12T09:30:00-08:00"
     video_script: dict | None = None
-    status: str = "pending"     # "pending", "posted", "failed"
+    status: str = "pending"     # "pending", "posted", "failed", "blocked"
     attempts: int = 0
     last_error: str | None = None
     posted_at: str | None = None
     post_uri: str | None = None
+    compliance_status: str | None = None     # "pass" | "warn" | "fixed" | "blocked"
+    compliance_detail: str | None = None     # human-readable summary
+    compliance_original: str | None = None   # pre-fix text (only when auto-fixed)
 
 
 @dataclass
@@ -548,6 +551,62 @@ def generate_week_schedule(
     # Update week range to include Sunday if teaser was added
     if not skip_teaser_wrapup:
         queue.week_start = sunday_date_str
+
+    # --- Compliance checks on generated queue items ---
+    try:
+        comp_cfg = config.get("compliance", {})
+        if comp_cfg.get("enabled", False):
+            from src.compliance import run_compliance_check
+
+            checked = 0
+            fixed = 0
+            warned = 0
+            blocked = 0
+
+            for item in queue.items:
+                if item.content_type != "text":
+                    continue  # Skip video items for now
+
+                result = run_compliance_check(
+                    post_text=item.text,
+                    source_text=None,  # not available at schedule time
+                    article_url=item.url or None,
+                    platform=item.platform,
+                    config=config,
+                )
+                item.compliance_status = result.status
+                item.compliance_detail = result.summary
+
+                if result.status == "fixed" and result.fixed_text:
+                    item.compliance_original = item.text
+                    item.text = result.fixed_text
+                    fixed += 1
+                elif result.status == "blocked":
+                    item.status = "blocked"
+                    blocked += 1
+                elif result.status == "warn":
+                    warned += 1
+
+                checked += 1
+
+            # Log compliance results
+            parts = []
+            if fixed:
+                parts.append(f"[cyan]{fixed} auto-fixed[/cyan]")
+            if warned:
+                parts.append(f"[yellow]{warned} warnings[/yellow]")
+            if blocked:
+                parts.append(f"[red]{blocked} blocked[/red]")
+            passed = checked - fixed - warned - blocked
+            if passed:
+                parts.append(f"[green]{passed} passed[/green]")
+            if parts:
+                console.print(
+                    f"[dim]Compliance: {', '.join(parts)} "
+                    f"({checked} text items checked)[/dim]"
+                )
+    except Exception as e:
+        console.print(f"[dim]Compliance check skipped: {e}[/dim]")
 
     # --- Assign time slots to each day's items ---
     time_slots = schedule_config.get("time_slots", ["09:00"])

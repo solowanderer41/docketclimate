@@ -241,9 +241,32 @@ exemplars:
   max_per_prompt: 3            # how many exemplars to inject into LLM prompts
   prefer_section_match: true   # prefer exemplars from the same section
 
+compliance:
+  enabled: true
+  auto_fix: true                 # attempt auto-correction before blocking
+  block_on_fail: false           # false = warn only; true = block posts that fail checks
+  notify_on_block: true          # send Slack notification when a post is blocked
+  prompt_enrichment: true        # inject compliance guidelines into LLM prompts
+  checks:
+    quote_ratio:
+      enabled: true
+      warn_threshold: 0.50       # warn if >50% of post is direct quotes
+      fail_threshold: 0.70       # fail/block if >70%
+    verbatim_overlap:
+      enabled: true
+      warn_words: 40             # warn if >40 consecutive words match source
+      fail_words: 60             # fail/block if >60
+    attribution:
+      enabled: true
+      require_link_or_credit: true
+      credit_text: "via The Docket"
+    claim_density:
+      enabled: true
+      warn_threshold: 3          # warn if >3 unattributed factual claims
+
 notifications:
-  enabled: false               # flip to true after setting webhook_url
-  webhook_url: ""              # Slack incoming webhook, Discord webhook, or generic endpoint
+  enabled: true
+  webhook_url: ""              # set NOTIFICATION_WEBHOOK_URL in .env instead
   format: "slack"              # "slack" | "discord" | "generic"
   notify_on_failure: true      # send alert when daily run has failures
   notify_weekly_report: true   # send weekly engagement summary
