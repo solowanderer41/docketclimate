@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+output/
+logs/
+*.mp4
+*.mp3
+.venv/
+analytics/
+data/
+.DS_Store
+test_*.py

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.docket.social.healthcheck</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/gregorybennett/docket-social/.venv/bin/python</string>
+        <string>-m</string>
+        <string>src.main</string>
+        <string>health-check</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/gregorybennett/docket-social</string>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- Daily at 10:00 AM (after first morning post slot at 09:30) -->
+        <dict>
+            <key>Hour</key>
+            <integer>10</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/gregorybennett/docket-social/logs/healthcheck.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/gregorybennett/docket-social/logs/healthcheck.stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>

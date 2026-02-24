@@ -1,0 +1,250 @@
+# The Docket Social Media Automation Config
+
+source:
+  base_url: "https://www.anchor.is"
+  latest_issue_url: "https://www.anchor.is/docket/issue/latest/"
+  sections:
+    - id: lived
+      name: "Human Stories"
+    - id: systems
+      name: "Cascading Effects"
+    - id: science
+      name: "Emerging Science"
+    - id: futures
+      name: "Future Tense"
+    - id: archive
+      name: "Climate Past"
+    - id: lab
+      name: "The Lab"
+
+platforms:
+  bluesky:
+    enabled: true
+    max_chars: 300
+    type: text
+
+  twitter:
+    enabled: true
+    max_chars: 280
+    type: text
+
+  threads:
+    enabled: true
+    max_chars: 500
+    type: text
+
+  reels:
+    enabled: true
+    type: video
+    max_duration_seconds: 60
+    min_duration_seconds: 15
+    aspect_ratio: "9:16"
+    resolution: [1080, 1920]
+
+  tiktok:
+    enabled: false
+    type: video
+    max_duration_seconds: 60
+    min_duration_seconds: 15
+    aspect_ratio: "9:16"
+    resolution: [1080, 1920]
+
+video:
+  resolution: [1080, 1920]  # 9:16 vertical
+  fps: 30
+  background_color: "#1a1a2e"
+  text_color: "#e0e0e0"
+  accent_color: "#4ecdc4"
+  font_size: 48
+  title_font_size: 64
+  duration_per_slide: 5  # seconds per text card
+  transition_duration: 0.5
+  visual:
+    stock_footage:
+      enabled: true
+      overlay_opacity: 0.55      # dark overlay over B-roll (0=none, 1=black)
+      preferred_quality: "hd"    # "hd" or "uhd"
+      fallback_to_gradient: true # use gradient if stock footage unavailable
+    hook_frame:
+      enabled: true
+      duration: 1.5              # seconds — brief scroll-stopper
+      font_size: 72              # large text for visual impact
+    kinetic_text:
+      enabled: true
+      stagger_delay: 0.25        # seconds between each line appearing
+      line_fade_duration: 0.3    # fade-in duration per line
+    gradient:
+      enabled: true
+      angle: 160          # degrees, top-left to bottom-right
+      strength: 0.35      # how much lighter the second color is vs base
+    text_shadow:
+      enabled: true
+      offset: [3, 3]      # pixels [x, y]
+      color: "#00000080"  # semi-transparent black
+    watermark:
+      enabled: true
+      text: "THE DOCKET"
+      font_size: 24
+      opacity: 0.15        # very subtle
+      position: "bottom-right"
+      margin: 40
+    progress_bar:
+      enabled: true
+      height: 4
+      color: null          # null = use section accent color
+      position: "bottom"
+    top_accent:
+      enabled: true
+      height: 3
+    particles:
+      enabled: true
+      count: 35             # number of floating particles per slide
+      min_radius: 2
+      max_radius: 8
+      speed: 0.3            # upward drift speed (fraction of height per second)
+      opacity: 0.12         # max opacity of particles
+    breathing:
+      enabled: true
+      speed: 0.4            # cycles per second (slow pulse)
+      amplitude: 0.08       # how much the gradient shifts (0-1)
+    text_fade:
+      enabled: true
+      duration: 0.4         # seconds for text to fade in
+    section_colors:
+      lived: "#e07a5f"     # warm coral — Human Stories
+      systems: "#f2cc8f"   # amber — Cascading Effects
+      science: "#4ecdc4"   # teal — Emerging Science
+      futures: "#7b68ee"   # medium slate blue — Future Tense
+      archive: "#a0937d"   # warm taupe — Climate Past
+      lab: "#81b29a"       # sage green — The Lab
+      default: "#4ecdc4"   # fallback to teal
+
+  # AI-generated imagery (Flux 2 Pro via BFL API)
+  ai_images:
+    enabled: true
+    provider: "bfl"
+    model: "flux-2-pro"
+    width: 1088
+    height: 1920
+    style_prefix: >
+      Photorealistic editorial documentary photograph, natural lighting,
+      atmospheric, cinematic depth of field, 9:16 portrait orientation,
+      no text or UI elements, climate and environmental subject matter
+    cache_dir: "data/ai_image_cache"
+    timeout_seconds: 30
+    max_retries: 3
+
+  # Tier 1: Cinematic — per-slide AI images, subtitle captions, Ken Burns
+  cinematic:
+    subtitle_font_size: 44
+    subtitle_y_fraction: 0.55
+    subtitle_stroke_width: 3
+    ken_burns_zoom: 1.12
+    ken_burns_pan_px: 50
+    crossfade_duration: 0.5
+    particles_enabled: false
+    top_accent_enabled: false
+
+  # Tier 2: Narrative — single AI background, text overlay
+  narrative:
+    overlay_opacity: 0.55
+    particles_enabled: false
+
+voiceover:
+  model: "eleven_multilingual_v2"
+  stability: 0.5
+  similarity_boost: 0.75
+  output_format: "mp3_44100_128"
+  per_slide: true                # generate one audio file per slide for sync
+  voiceover_padding: 0.3         # seconds of silence after each slide's audio
+  min_slide_duration: 1.5        # floor duration even if audio is very short
+
+posting:
+  # How many posts to generate per issue (batch mode)
+  text_posts_per_section: 1
+  video_posts_per_issue: 2
+  news_posts_per_issue: 2
+  # Sections to prioritize for social posts
+  priority_sections:
+    - lived
+    - systems
+    - science
+
+schedule:
+  enabled: true
+  weekdays: [mon, tue, wed, thu, fri]
+  timezone: "America/Los_Angeles"
+  # Default time slots (used when platform has no specific slots)
+  time_slots:
+    - "09:30"
+    - "12:30"
+    - "15:30"
+    - "17:30"
+  # Platform-specific optimal posting times
+  # Research: Twitter 8AM/12PM/5PM, Threads 7-10PM (conversation hours),
+  # Reels 7-9AM + 7-9PM (scroll-in-bed hours), Bluesky any consistent time
+  platform_time_slots:
+    twitter:
+      - "08:00"
+      - "12:00"
+      - "17:00"
+    threads:
+      - "12:30"
+      - "19:00"
+      - "20:30"
+    reels:
+      - "07:30"
+      - "19:30"
+    bluesky:
+      - "09:30"
+      - "12:30"
+      - "15:30"
+      - "17:30"
+  features_per_day: 3
+  news_per_day: 4
+  videos_per_week: 5
+  retry_max: 3
+  retry_delay_minutes: 15
+  scrape_day: sunday
+
+cold_start:
+  enabled: true                    # flip to false once accounts reach 50+ followers
+  features_per_day: 1              # override: 1 feature per platform per day
+  news_per_day: 1                  # override: 1 news per platform per day
+  videos_per_week: 2               # override: fewer videos during growth phase
+  skip_teaser_wrapup: true         # defer Sunday teaser + Friday wrap-up until audience exists
+  # CTA rotation during cold-start (Fix X3 — applied when cold_start.enabled)
+  cta_ratios:
+    no_link: 0.50                  # pure engagement — max algorithmic distribution
+    follow_driving: 0.30           # "Follow @docketclimate for more tomorrow"
+    link: 0.20                     # article/subscribe links (preserved for some clicks)
+  # Video overrides for discovery phase (Fix X4)
+  video:
+    body_slides: 3                 # 2-3 body slides instead of 4-5 (target 15-20s)
+    max_words_per_slide: 15        # tighter than normal (18)
+    integrate_cta: true            # overlay CTA on final slide instead of separate card
+
+tracking:
+  utm_enabled: true          # tag all social links with UTM params for attribution
+  # Future: link shortener integration for click tracking
+  # shortener: null           # "dub" | "short_io" | null
+
+analytics:
+  enabled: true
+  collect_delay_hours: 48  # wait 48h after posting before collecting metrics
+  metrics_path: "analytics/metrics.json"
+
+exemplars:
+  enabled: true
+  path: "data/exemplars/exemplars.json"
+  inject_into_prompts: false   # flip to true after accumulating 5+ exemplars
+  max_per_prompt: 3            # how many exemplars to inject into LLM prompts
+  prefer_section_match: true   # prefer exemplars from the same section
+
+notifications:
+  enabled: false               # flip to true after setting webhook_url
+  webhook_url: ""              # Slack incoming webhook, Discord webhook, or generic endpoint
+  format: "slack"              # "slack" | "discord" | "generic"
+  notify_on_failure: true      # send alert when daily run has failures
+  notify_weekly_report: true   # send weekly engagement summary
+  notify_health_alert: true    # send alert from health watchdog
