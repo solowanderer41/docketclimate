@@ -4,9 +4,10 @@ Threads Publisher Module for Docket Social
 
 Publishes text posts to Meta Threads via the Threads API (HTTP).
 
-The Threads API uses a two-step publishing flow:
+The Threads API uses a three-step publishing flow:
     1. Create a media container (POST to /{user_id}/threads)
-    2. Publish the container (POST to /{user_id}/threads_publish)
+    2. Poll container status (GET /{container_id}?fields=status) until FINISHED
+    3. Publish the container (POST to /{user_id}/threads_publish)
 
 Required API Credentials (in .env):
     META_THREADS_USER_ID - Your Threads/Instagram user ID (numeric)
@@ -110,6 +111,56 @@ class ThreadsPublisher:
         )
         return container_id
 
+    def _wait_for_container(self, container_id: str) -> str:
+        """
+        Poll the container status until it is FINISHED or an error occurs.
+
+        The Threads API requires containers to finish processing before they
+        can be published. Skipping this step causes intermittent 400 errors
+        ("The requested resource does not exist") on the publish endpoint.
+
+        Args:
+            container_id: The ID returned from the container creation step.
+
+        Returns:
+            The final status string ("FINISHED").
+
+        Raises:
+            RuntimeError: If the container enters an ERROR state.
+            TimeoutError: If the container is not ready within PUBLISH_TIMEOUT.
+        """
+        url = f"{BASE_URL}/{container_id}"
+        params = {
+            "fields": "status,error_message",
+            "access_token": self.access_token,
+        }
+        deadline = time.time() + PUBLISH_TIMEOUT
+
+        while time.time() < deadline:
+            resp = requests.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            status = data.get("status")
+
+            if status == "FINISHED":
+                console.print(f"[dim]Container {container_id} ready.[/dim]")
+                return status
+
+            if status == "ERROR":
+                error_msg = data.get("error_message", "unknown error")
+                raise RuntimeError(
+                    f"Threads container {container_id} failed: {error_msg}"
+                )
+
+            console.print(
+                f"[dim]Container status: {status}, waiting {PUBLISH_POLL_INTERVAL}s...[/dim]"
+            )
+            time.sleep(PUBLISH_POLL_INTERVAL)
+
+        raise TimeoutError(
+            f"Threads container {container_id} not ready after {PUBLISH_TIMEOUT}s"
+        )
+
     def _publish_container(self, container_id: str) -> str:
         """
         Publish a previously created media container.
@@ -150,6 +201,7 @@ class ThreadsPublisher:
 
         try:
             container_id = self._create_container(text)
+            self._wait_for_container(container_id)
             thread_id = self._publish_container(container_id)
             result = {"thread_id": thread_id}
             console.print(

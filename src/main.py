@@ -27,6 +27,8 @@ Usage:
     python -m src.main flag-good          # Interactive batch flagging
     python -m src.main show-exemplars     # Show flagged exemplary content
     python -m src.main add-exemplar       # Write a manual gold-standard exemplar
+    python -m src.main seed-exemplars     # Review top posts, edit, and save as exemplars
+    python -m src.main seed-exemplars --top 12  # Show more candidates
     python -m src.main compliance-check   # Run publishing law compliance checks
     python -m src.main compliance-check --fix  # Check + auto-fix queue items
     python -m src.main health-check       # Run system health checks
@@ -1469,6 +1471,282 @@ def add_exemplar(platform, section, title, notes):
         "article": title,
         "chars": len(clean_text),
         "exemplar_id": exemplar.id,
+    })
+
+
+@cli.command(name="seed-exemplars")
+@click.option("--top", "top_n", default=8, help="Number of top posts to display (default: 8)")
+@click.option("--section", default=None, help="Filter to one section (e.g. science, lived)")
+def seed_exemplars(top_n, section):
+    """Review your best-performing posts, edit them to gold-standard quality, and save as exemplars.
+
+    This is the recommended way to bootstrap the exemplar system: take what the
+    pipeline already generated, hand-edit to your ideal voice and framing, and
+    seed those as few-shot examples for future LLM calls.
+
+    The workflow:
+        1. Displays your top posts ranked by engagement
+        2. You select which to promote
+        3. Each opens in $EDITOR for hand-editing
+        4. Edited posts are saved as exemplars with a quality bonus
+
+    Examples:
+        python -m src.main seed-exemplars              # Interactive, top 8
+        python -m src.main seed-exemplars --top 12     # Show more candidates
+        python -m src.main seed-exemplars --section science  # Filter by section
+    """
+    from src.scheduler import WeekQueue
+    from src.exemplars import (
+        save_exemplar, load_exemplars, Exemplar,
+    )
+    from rich.prompt import Prompt
+
+    config = _load_config()
+    exemplar_config = config.get("exemplars", {})
+    exemplars_path = PROJECT_ROOT / exemplar_config.get(
+        "path", "data/exemplars/exemplars.json"
+    )
+
+    # Platform character limits
+    platform_limits = {
+        "twitter": config.get("platforms", {}).get("twitter", {}).get("max_chars", 280),
+        "bluesky": config.get("platforms", {}).get("bluesky", {}).get("max_chars", 300),
+        "threads": config.get("platforms", {}).get("threads", {}).get("max_chars", 500),
+    }
+
+    # --- Load all queue files ---
+    queue_files = sorted(QUEUE_DIR.glob("week_*.json"), key=lambda p: p.stat().st_mtime)
+    if not queue_files:
+        console.print("[yellow]No queue files found. Run 'schedule' first.[/yellow]")
+        return
+
+    all_posted = []
+    for qf in queue_files:
+        try:
+            wq = WeekQueue.load(qf)
+            for item in wq.items:
+                if item.status == "posted":
+                    item._issue_number = wq.issue_number  # stash for exemplar
+                    all_posted.append(item)
+        except Exception:
+            pass
+
+    if not all_posted:
+        console.print("[yellow]No posted items found across any queue files.[/yellow]")
+        return
+
+    # --- Load engagement metrics ---
+    metrics_map = {}
+    try:
+        from src.analytics import load_metrics
+        analytics_config = config.get("analytics", {})
+        metrics_path_str = analytics_config.get("metrics_path", "analytics/metrics.json")
+        all_metrics = load_metrics(PROJECT_ROOT / metrics_path_str)
+        for m in all_metrics:
+            metrics_map[m.queue_item_id] = m.engagement_score
+    except Exception:
+        pass
+
+    # --- Filter by section if requested ---
+    if section:
+        all_posted = [i for i in all_posted if i.section == section]
+        if not all_posted:
+            console.print(f"[yellow]No posted items in section '{section}'.[/yellow]")
+            return
+
+    # --- Rank by engagement score (highest first) ---
+    all_posted.sort(key=lambda i: metrics_map.get(i.id, 0.0), reverse=True)
+    candidates = all_posted[:top_n]
+
+    # --- Display candidates ---
+    console.print(f"\n[bold]Top {len(candidates)} Posted Items — Exemplar Candidates[/bold]\n")
+
+    for idx, item in enumerate(candidates, 1):
+        score = metrics_map.get(item.id, 0.0)
+        header = (
+            f"[bold]#{idx}[/bold]  {item.section} · {item.platform} · "
+            f"score {score:.0f}"
+        )
+        console.print(Panel(
+            f"[dim]{item.article_title}[/dim]\n\n{item.text}",
+            title=header,
+            border_style="cyan",
+            width=min(console.width, 90),
+            padding=(0, 2),
+        ))
+        console.print()
+
+    # --- User selects items ---
+    selection = Prompt.ask(
+        "[bold]Select items to edit and promote[/bold] (comma-separated numbers, e.g. 1,3,5)",
+        default="",
+    )
+
+    if not selection.strip():
+        console.print("[yellow]No items selected. Exiting.[/yellow]")
+        return
+
+    try:
+        indices = [int(s.strip()) for s in selection.split(",") if s.strip()]
+    except ValueError:
+        console.print("[red]Invalid input. Use comma-separated numbers (e.g. 1,3,5).[/red]")
+        return
+
+    selected_items = []
+    for idx in indices:
+        if 1 <= idx <= len(candidates):
+            selected_items.append(candidates[idx - 1])
+        else:
+            console.print(f"[yellow]Skipping #{idx} — out of range.[/yellow]")
+
+    if not selected_items:
+        console.print("[yellow]No valid items selected. Exiting.[/yellow]")
+        return
+
+    # --- Edit each selected item ---
+    saved_count = 0
+    for item in selected_items:
+        score = metrics_map.get(item.id, 0.0)
+        char_limit = platform_limits.get(item.platform, 300)
+
+        template = (
+            f"# EXEMPLAR EDITOR — Edit this post to gold-standard quality\n"
+            f"# Lines starting with # are stripped. Save and close when done.\n"
+            f"# Original: {item.id} | Score: {score:.0f} | "
+            f"Platform: {item.platform} ({char_limit} chars)\n"
+            f"# Section: {item.section} | Article: {item.article_title}\n"
+            f"#\n"
+            f"# Tips: Sharpen the hook, tighten framing, fix voice, trim filler.\n"
+            f"# The LLM will pattern-match on this — make it what you want to see more of.\n"
+            f"\n"
+            f"{item.text}\n"
+        )
+
+        console.print(
+            f"\n[bold cyan]Opening editor for:[/bold cyan] {item.article_title[:60]} "
+            f"({item.platform}, score {score:.0f})"
+        )
+
+        edited = click.edit(template)
+
+        if edited is None:
+            console.print(f"[yellow]Editor closed without saving — skipping {item.id}[/yellow]")
+            continue
+
+        # Strip comment lines
+        lines = [line for line in edited.splitlines() if not line.strip().startswith("#")]
+        clean_text = "\n".join(lines).strip()
+
+        if not clean_text:
+            console.print(f"[yellow]Empty text — skipping {item.id}[/yellow]")
+            continue
+
+        # Validate length
+        if len(clean_text) > char_limit:
+            console.print(
+                f"[red]{item.id}: {len(clean_text)} chars exceeds {item.platform} "
+                f"limit of {char_limit}. Skipping — please retry.[/red]"
+            )
+            continue
+
+        # Check if unchanged
+        if clean_text == item.text:
+            console.print(
+                f"[dim]{item.id}: Text unchanged from original.[/dim]"
+            )
+            if not Confirm.ask("Save as exemplar anyway?", default=True):
+                continue
+
+        # Optional notes
+        user_notes = Prompt.ask(
+            f"[dim]Notes for {item.id} (optional)[/dim]", default=""
+        )
+
+        # Build and save exemplar
+        issue_num = getattr(item, "_issue_number", None)
+        exemplar_type = "good_video" if item.content_type == "video" else "good_copy"
+        bonus_score = score + 50.0  # hand-edited bonus
+
+        exemplar = Exemplar(
+            id=f"ex_{item.id}",
+            exemplar_type=exemplar_type,
+            queue_item_id=item.id,
+            issue_number=issue_num,
+            platform=item.platform,
+            article_title=item.article_title,
+            section=item.section,
+            is_feature=item.is_feature,
+            text=clean_text,
+            video_script=item.video_script if exemplar_type == "good_video" else None,
+            flagged_at=datetime.now().isoformat(),
+            engagement_score=bonus_score,
+            notes=user_notes or f"Hand-edited from {item.id}",
+        )
+
+        save_exemplar(exemplar, exemplars_path)
+        saved_count += 1
+
+        console.print(Panel.fit(
+            f"[bold green]Exemplar Saved[/bold green]\n\n"
+            f"Platform: {item.platform} ({len(clean_text)}/{char_limit} chars)\n"
+            f"Score: {bonus_score:.0f} (original {score:.0f} + 50 edit bonus)\n\n"
+            f"[italic]{clean_text[:200]}{'...' if len(clean_text) > 200 else ''}[/italic]",
+            border_style="green",
+            title=f"[bold]{exemplar.id}[/bold]",
+        ))
+
+    # --- Summary ---
+    if saved_count == 0:
+        console.print("\n[yellow]No exemplars saved this session.[/yellow]")
+        return
+
+    console.print(f"\n[bold green]Saved {saved_count} exemplar(s).[/bold green]")
+
+    all_exemplars = load_exemplars(exemplars_path)
+    total = len(all_exemplars)
+    copies = sum(1 for e in all_exemplars if e.exemplar_type == "good_copy")
+    videos = sum(1 for e in all_exemplars if e.exemplar_type == "good_video")
+
+    console.print(
+        f"[dim]Exemplar store: {total} total ({copies} copy, {videos} video)[/dim]"
+    )
+
+    # --- Offer to enable prompt injection ---
+    if copies >= 5 and not exemplar_config.get("inject_into_prompts", False):
+        console.print(
+            f"\n[bold cyan]You have {copies} copy exemplars — enough to enable "
+            f"prompt injection![/bold cyan]"
+        )
+        if Confirm.ask("Enable exemplars.inject_into_prompts in config.yaml?", default=True):
+            try:
+                with open(CONFIG_PATH) as f:
+                    config_text = f.read()
+                config_text = config_text.replace(
+                    "inject_into_prompts: false",
+                    "inject_into_prompts: true",
+                )
+                with open(CONFIG_PATH, "w") as f:
+                    f.write(config_text)
+                console.print(
+                    "[bold green]Done![/bold green] Exemplars will now be injected "
+                    "into LLM prompts on the next content generation run."
+                )
+            except Exception as e:
+                console.print(
+                    f"[red]Could not update config.yaml: {e}[/red]\n"
+                    f"Manually set exemplars.inject_into_prompts: true"
+                )
+    elif copies < 5:
+        remaining = 5 - copies
+        console.print(
+            f"[dim]Need {remaining} more copy exemplar(s) to enable prompt injection.[/dim]"
+        )
+
+    _log_run("seed-exemplars", {
+        "candidates_shown": len(candidates),
+        "selected": len(selected_items),
+        "saved": saved_count,
+        "total_exemplars": total,
     })
 
 

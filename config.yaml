@@ -237,7 +237,7 @@ analytics:
 exemplars:
   enabled: true
   path: "data/exemplars/exemplars.json"
-  inject_into_prompts: false   # flip to true after accumulating 5+ exemplars
+  inject_into_prompts: true    # enabled — 5 hand-edited exemplars seeded 2026-02-24
   max_per_prompt: 3            # how many exemplars to inject into LLM prompts
   prefer_section_match: true   # prefer exemplars from the same section
 

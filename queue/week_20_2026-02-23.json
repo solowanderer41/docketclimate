@@ -22,7 +22,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": "2026-02-23T12:30:07.827755",
-      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mfkilk3wxx2u"
+      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mfkilk3wxx2u",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_mon_002",
@@ -42,7 +45,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": "2026-02-23T12:30:08.122975",
-      "post_uri": "twitter:2026031843624251453"
+      "post_uri": "twitter:2026031843624251453",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_mon_003",
@@ -62,7 +68,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": "2026-02-23T12:30:15.122170",
-      "post_uri": "17912625066321067"
+      "post_uri": "17912625066321067",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_tue_004",
@@ -78,11 +87,14 @@
       "hashtags": [],
       "scheduled_time": "2026-02-24T09:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-02-24T09:30:06.136322",
+      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mfmoykb6kj2m",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_tue_005",
@@ -98,11 +110,14 @@
       "hashtags": [],
       "scheduled_time": "2026-02-24T08:00:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-02-24T09:30:06.557742",
+      "post_uri": "twitter:2026348926245417254",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_tue_006",
@@ -113,16 +128,19 @@
       "article_title": "When the Red Cross Broke Under the Weight of a Flood",
       "section": "archive",
       "is_feature": true,
-      "text": "Everyone's talking about when the red cross broke under the weight of a flood. They're missing the real story.\n\nPresident Coolidge said the Red Cross would handle it.\n\nThe Red Cross couldn't handle it.\n\nFollow @docketclimate for more.",
+      "text": "Everyone's talking about when the red cross broke under the weight of a flood. They're missing the real story.\n\nPresident Coolidge said the Red Cross would handle it.\n\nThe Red Cross couldn't handle it.\n\nFollow @docketclimate for more.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-24T12:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-02-24T15:30:12.214194",
+      "post_uri": "18101889973922351",
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "Everyone's talking about when the red cross broke under the weight of a flood. They're missing the real story.\n\nPresident Coolidge said the Red Cross would handle it.\n\nThe Red Cross couldn't handle it.\n\nFollow @docketclimate for more."
     },
     {
       "id": "20_wed_007",
@@ -133,7 +151,7 @@
       "article_title": "How San Francisco's 1906 Earthquake Created the Template for Climate Insurance Retreat",
       "section": "archive",
       "is_feature": true,
-      "text": "Captain Leonard D. Wildman watched San Francisco residents torch their own earthquake-damaged homes in April 1906. Insurance only paid if buildings burned, not if they cracked. The template was set. Climate retreat begins with fine print.",
+      "text": "Captain Leonard D. Wildman watched San Francisco residents torch their own earthquake-damaged homes in April 1906. Insurance only paid if buildings burned, not if they cracked. The template was set. Climate retreat begins with fine print.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-25T09:30:00-08:00",
@@ -142,7 +160,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "Captain Leonard D. Wildman watched San Francisco residents torch their own earthquake-damaged homes in April 1906. Insurance only paid if buildings burned, not if they cracked. The template was set. Climate retreat begins with fine print."
     },
     {
       "id": "20_wed_008",
@@ -164,7 +185,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null
     },
     {
       "id": "20_wed_009",
@@ -187,7 +211,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null
     },
     {
       "id": "20_thu_010",
@@ -198,7 +225,7 @@
       "article_title": "A Ski Resort Manager Watches the Powder Disappear",
       "section": "lived",
       "is_feature": true,
-      "text": "The snowmaking guns run in mid-February. Through his office window, Wade Powder watches white plumes coat brown patches that should be buried under three feet of natural snow. Utah's snowpack: 52% of normal. The worst since records began in 1980.",
+      "text": "The snowmaking guns run in mid-February. Through his office window, Wade Powder watches white plumes coat brown patches that should be buried under three feet of natural snow. Utah's snowpack: 52% of normal. The worst since records began in 1980.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-26T09:30:00-08:00",
@@ -207,7 +234,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "The snowmaking guns run in mid-February. Through his office window, Wade Powder watches white plumes coat brown patches that should be buried under three feet of natural snow. Utah's snowpack: 52% of normal. The worst since records began in 1980."
     },
     {
       "id": "20_thu_011",
@@ -218,7 +248,7 @@
       "article_title": "A Ski Resort Manager Watches the Powder Disappear",
       "section": "lived",
       "is_feature": true,
-      "text": "Mid-February. The snowmaking guns are still running. Wade Powder stares through his office window at crews installing equipment on runs that should already be buried. Utah's snowpack sits at 52% of normal\u2014matching the state's worst levels since 1980.",
+      "text": "Mid-February. The snowmaking guns are still running. Wade Powder stares through his office window at crews installing equipment on runs that should already be buried. Utah's snowpack sits at 52% of normal\u2014matching the state's worst levels since 1980.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-26T08:00:00-08:00",
@@ -227,7 +257,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "Mid-February. The snowmaking guns are still running. Wade Powder stares through his office window at crews installing equipment on runs that should already be buried. Utah's snowpack sits at 52% of normal\u2014matching the state's worst levels since 1980."
     },
     {
       "id": "20_thu_012",
@@ -247,7 +280,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null
     },
     {
       "id": "20_fri_013",
@@ -258,7 +294,7 @@
       "article_title": "When the Ground Falls as Fast as the Water Rises",
       "section": "science",
       "is_feature": true,
-      "text": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay.",
+      "text": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-27T09:30:00-08:00",
@@ -267,7 +303,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay."
     },
     {
       "id": "20_fri_014",
@@ -278,7 +317,7 @@
       "article_title": "When the Ground Falls as Fast as the Water Rises",
       "section": "science",
       "is_feature": true,
-      "text": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay.",
+      "text": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-27T08:00:00-08:00",
@@ -287,7 +326,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay."
     },
     {
       "id": "20_fri_015",
@@ -298,7 +340,7 @@
       "article_title": "When the Ground Falls as Fast as the Water Rises",
       "section": "science",
       "is_feature": true,
-      "text": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay.\n\nFollow @docketclimate for more.",
+      "text": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay.\n\nFollow @docketclimate for more.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-27T12:30:00-08:00",
@@ -307,7 +349,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "Engineers built seawalls for rising water.\n\nNow it's a nature preserve in Galveston Bay.\n\nFollow @docketclimate for more."
     },
     {
       "id": "20_mon_016",
@@ -349,7 +394,10 @@
       "attempts": 1,
       "last_error": "Reels container did not become ready for publishing.",
       "posted_at": "2026-02-23T13:55:12.660206",
-      "post_uri": "reels:17990339867929403"
+      "post_uri": "reels:17990339867929403",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_tue_017",
@@ -381,15 +429,20 @@
         "image_prompts": [
           "Black and white photograph of a stern man in wire-rim glasses at a wooden desk covered in telegrams, single desk lamp casting harsh shadows, government office 1920s",
           "Small town church basement with folding tables, women in long dresses serving soup from large pots, warm lamplight, community volunteers, 1920s America",
-          "Endless rows of canvas tents stretching to horizon, muddy ground, overcast sky, people in period clothing walking between tents, massive refugee camp, aerial perspective"
+          "Endless rows of canvas tents stretching to horizon, muddy ground, overcast sky, people in period clothing walking between tents, massive refugee camp, aerial perspective",
+          "Atmospheric documentary photograph visualizing: Before the breach: disaster meant local church basements, volunteer ladies.. Photojournalistic style, natural lighting, cinematic composition, 9:16 portrait, no text or UI elements.",
+          "Atmospheric documentary photograph visualizing: After Mounds Landing: tent cities stretching past horizons.. Photojournalistic style, natural lighting, cinematic composition, 9:16 portrait, no text or UI elements."
         ],
         "background_prompt": ""
       },
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-02-24T09:33:59.732703",
+      "post_uri": "reels:18105660223885617",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_mon_018",
@@ -409,7 +462,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": "2026-02-23T12:51:24.662334",
-      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mfkjrlrvwx2o"
+      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mfkjrlrvwx2o",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_mon_019",
@@ -429,7 +485,10 @@
       "attempts": 1,
       "last_error": null,
       "posted_at": "2026-02-23T14:16:12.687651",
-      "post_uri": "https://twitter.com/i/status/2026058515853566447"
+      "post_uri": "https://twitter.com/i/status/2026058515853566447",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_mon_020",
@@ -452,7 +511,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null
     },
     {
       "id": "20_tue_021",
@@ -471,11 +533,14 @@
       ],
       "scheduled_time": "2026-02-24T12:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-02-24T12:30:12.709071",
+      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mfmz2lkokt2r",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_tue_022",
@@ -491,11 +556,14 @@
       "hashtags": [],
       "scheduled_time": "2026-02-24T12:00:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-02-24T12:30:13.086289",
+      "post_uri": "twitter:2026394252209733934",
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null
     },
     {
       "id": "20_tue_023",
@@ -515,7 +583,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null
     },
     {
       "id": "20_wed_024",
@@ -526,7 +597,7 @@
       "article_title": "Atlantic Coast Cities Sinking Faster Than Expected",
       "section": "science",
       "is_feature": false,
-      "text": "JFK Airport is sinking. Two millimeters a year. Radar satellites don't lie\u2014half of New York's infrastructure sits on subsiding ground. Baltimore, Norfolk, same story. The satellites measured 13 years of slow-motion collapse. Critical systems built for old flood maps.",
+      "text": "JFK Airport is sinking. Two millimeters a year. Radar satellites don't lie\u2014half of New York's infrastructure sits on subsiding ground. Baltimore, Norfolk, same story. The satellites measured 13 years of slow-motion collapse. Critical systems built for old flood maps.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-25T12:30:00-08:00",
@@ -535,7 +606,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "JFK Airport is sinking. Two millimeters a year. Radar satellites don't lie\u2014half of New York's infrastructure sits on subsiding ground. Baltimore, Norfolk, same story. The satellites measured 13 years of slow-motion collapse. Critical systems built for old flood maps."
     },
     {
       "id": "20_wed_025",
@@ -546,7 +620,7 @@
       "article_title": "Atlantic Coast Cities Sinking Faster Than Expected",
       "section": "science",
       "is_feature": false,
-      "text": "Satellite radar caught them sinking. New York, Baltimore, Norfolk\u2014major infrastructure dropping 1-2mm yearly since 2007. Some Delaware counties: three times faster. Water plants, rail lines, airports. All built for flood projections that no longer exist.",
+      "text": "Satellite radar caught them sinking. New York, Baltimore, Norfolk\u2014major infrastructure dropping 1-2mm yearly since 2007. Some Delaware counties: three times faster. Water plants, rail lines, airports. All built for flood projections that no longer exist.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-25T12:00:00-08:00",
@@ -555,7 +629,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "Satellite radar caught them sinking. New York, Baltimore, Norfolk\u2014major infrastructure dropping 1-2mm yearly since 2007. Some Delaware counties: three times faster. Water plants, rail lines, airports. All built for flood projections that no longer exist."
     },
     {
       "id": "20_wed_026",
@@ -575,7 +652,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null
     },
     {
       "id": "20_thu_027",
@@ -586,7 +666,7 @@
       "article_title": "Chesapeake Bay Land Sinking Explains Fastest Coastal Flooding",
       "section": "science",
       "is_feature": false,
-      "text": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nMore tomorrow. Follow @docketclimate.",
+      "text": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nMore tomorrow. Follow @docketclimate.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-26T12:30:00-08:00",
@@ -595,7 +675,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nMore tomorrow. Follow @docketclimate."
     },
     {
       "id": "20_thu_028",
@@ -606,7 +689,7 @@
       "article_title": "Chesapeake Bay Land Sinking Explains Fastest Coastal Flooding",
       "section": "science",
       "is_feature": false,
-      "text": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nFollow for the stories that fall between the headlines.",
+      "text": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nFollow for the stories that fall between the headlines.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-26T12:00:00-08:00",
@@ -615,7 +698,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nFollow for the stories that fall between the headlines."
     },
     {
       "id": "20_thu_029",
@@ -626,7 +712,7 @@
       "article_title": "Chesapeake Bay Land Sinking Explains Fastest Coastal Flooding",
       "section": "science",
       "is_feature": false,
-      "text": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nFollow @docketclimate for more.",
+      "text": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nFollow @docketclimate for more.\n\nvia The Docket",
       "url": "",
       "hashtags": [],
       "scheduled_time": "2026-02-26T19:00:00-08:00",
@@ -635,7 +721,10 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": "fixed",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": "The loudest part of this story isn't the important part.\n\nGroundwater pumping compacts aquifers, causing more than half the region's measured sea level rise.\n\nWhy is\u2026\n\nFollow @docketclimate for more."
     }
   ]
 }
