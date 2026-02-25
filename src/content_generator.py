@@ -290,6 +290,7 @@ class VideoScript:
     video_tier: str = "narrative"          # "cinematic" or "narrative"
     image_prompts: list[str] = field(default_factory=list)
     background_prompt: str = ""
+    voiceover_lines: list[str] = field(default_factory=list)  # per-slide spoken text
 
     @property
     def caption(self) -> str:
@@ -1633,7 +1634,7 @@ Return ONLY valid JSON. No markdown, no explanation."""
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1024,
+            max_tokens=2048,  # was 1024 — image prompts were getting truncated
             messages=[{"role": "user", "content": prompt}],
         )
 
@@ -1643,7 +1644,22 @@ Return ONLY valid JSON. No markdown, no explanation."""
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw)
 
-        result = json.loads(raw)
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            # Attempt to recover truncated JSON by closing open structures
+            _recovered = raw.rstrip()
+            result = None
+            for _closer in ['"}', '"]', '"}]', '"]}', '"}]}']:
+                try:
+                    result = json.loads(_recovered + _closer)
+                    console.print("[dim]Recovered truncated JSON from Claude response[/dim]")
+                    break
+                except json.JSONDecodeError:
+                    continue
+            if result is None:
+                console.print("[yellow]Claude returned invalid JSON for video script[/yellow]")
+                return None
 
         # Validate structure
         if (isinstance(result.get("body_slides"), list) and
@@ -1771,7 +1787,15 @@ def generate_video_scripts(issue: DocketIssue, config: dict) -> list[VideoScript
 
         cta = VIDEO_CTA_TEXT
 
-        voiceover = _build_voiceover(hook, body_slides, spoken_cta)
+        # Build voiceover: prefer LLM voiceover_lines (conversational) over
+        # raw slide text concatenation from _build_voiceover()
+        if llm_result and llm_result.get("voiceover_lines"):
+            spoken_parts = [hook.replace("\n\n", " ")]
+            spoken_parts.extend(voiceover_lines)
+            spoken_parts.append(spoken_cta)
+            voiceover = " ".join(p.strip() for p in spoken_parts if p.strip())
+        else:
+            voiceover = _build_voiceover(hook, body_slides, spoken_cta)
 
         # Extract cinematic scoring fields from LLM result
         cinematic_score = 0
@@ -1797,6 +1821,7 @@ def generate_video_scripts(issue: DocketIssue, config: dict) -> list[VideoScript
             video_tier=video_tier,
             image_prompts=image_prompts,
             background_prompt=background_prompt,
+            voiceover_lines=voiceover_lines,
         )
         scripts.append(script)
 

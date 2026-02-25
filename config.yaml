@@ -137,18 +137,42 @@ video:
   # Tier 1: Cinematic — per-slide AI images, subtitle captions, Ken Burns
   cinematic:
     subtitle_font_size: 44
-    subtitle_y_fraction: 0.55
+    subtitle_y_fraction: 0.72       # lower-third zone (was 0.55 = center)
     subtitle_stroke_width: 3
+    subtitle_pill:
+      enabled: true
+      color: "#000000"
+      opacity: 0.65
+      padding_x: 24
+      padding_y: 12
+      border_radius: 12
     ken_burns_zoom: 1.12
     ken_burns_pan_px: 50
     crossfade_duration: 0.5
     particles_enabled: false
     top_accent_enabled: false
 
+  # H.264 encoding quality (passed to ffmpeg via moviepy)
+  encoding:
+    preset: "slow"           # better compression quality (vs "medium" default)
+    crf: 18                  # visually lossless (Instagram re-encodes anyway)
+    pixel_format: "yuv420p"  # required for Instagram/QuickTime compatibility
+    profile: "high"          # h264 profile
+    audio_bitrate: "192k"    # AAC bitrate
+
   # Tier 2: Narrative — single AI background, text overlay
   narrative:
     overlay_opacity: 0.55
     particles_enabled: false
+
+  # Background music bed (mixed under voiceover at low volume)
+  background_music:
+    enabled: false            # flip to true after adding tracks to assets/music/
+    volume: 0.08              # 8% volume — barely audible under voiceover
+    fade_in_seconds: 1.5
+    fade_out_seconds: 2.0
+    tracks:                   # royalty-free ambient tracks (CC0); one selected per video
+      - "assets/music/ambient_01.mp3"
 
 voiceover:
   model: "eleven_multilingual_v2"

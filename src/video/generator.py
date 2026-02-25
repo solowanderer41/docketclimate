@@ -19,6 +19,7 @@ import math
 import random
 import sys
 import textwrap
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -72,8 +73,60 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
 
 
+_FONT_CACHE_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts" / "extracted"
+_OSWALD_ZIP = Path(__file__).resolve().parents[2] / "assets" / "fonts" / "oswald.zip"
+_oswald_bold_path: Path | None = None  # cached after first extraction
+
+
+def _ensure_oswald_extracted() -> Path | None:
+    """Extract Oswald font from bundled zip if not already extracted.
+
+    Returns path to Oswald-Bold.ttf, or None if unavailable.
+    Result is cached after first successful call.
+    """
+    global _oswald_bold_path
+    if _oswald_bold_path is not None:
+        return _oswald_bold_path
+
+    # Check if already extracted
+    bold_path = _FONT_CACHE_DIR / "Oswald-Bold.ttf"
+    if bold_path.exists():
+        _oswald_bold_path = bold_path
+        return bold_path
+
+    if not _OSWALD_ZIP.exists():
+        return None
+
+    try:
+        _FONT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(_OSWALD_ZIP, "r") as zf:
+            zf.extractall(_FONT_CACHE_DIR)
+        if bold_path.exists():
+            _oswald_bold_path = bold_path
+            return bold_path
+        # Zip may have a different structure — find any Bold .ttf
+        for f in _FONT_CACHE_DIR.rglob("*Bold*.ttf"):
+            _oswald_bold_path = f
+            return f
+        # Last resort: any .ttf in the extracted dir
+        for f in _FONT_CACHE_DIR.rglob("*.ttf"):
+            _oswald_bold_path = f
+            return f
+    except Exception:
+        pass
+    return None
+
+
 def _get_font(size: int) -> ImageFont.FreeTypeFont:
-    """Try to load a system font, falling back to the default bitmap font."""
+    """Try to load a font, preferring bundled Oswald then system fonts."""
+    # Try bundled Oswald first (works on any platform)
+    oswald_path = _ensure_oswald_extracted()
+    if oswald_path:
+        try:
+            return ImageFont.truetype(str(oswald_path), size)
+        except (OSError, IOError):
+            pass
+
     font_candidates = [
         "/System/Library/Fonts/Helvetica.ttc",
         "/System/Library/Fonts/SFNSText.ttf",
@@ -103,6 +156,14 @@ def _get_title_font(size: int) -> ImageFont.FreeTypeFont:
     if Path(_FUTURA_TTC).exists():
         try:
             return ImageFont.truetype(_FUTURA_TTC, size, index=4)
+        except (OSError, IOError):
+            pass
+
+    # Bundled Oswald-Bold — condensed and bold, good for headlines
+    oswald_path = _ensure_oswald_extracted()
+    if oswald_path:
+        try:
+            return ImageFont.truetype(str(oswald_path), size)
         except (OSError, IOError):
             pass
 
@@ -500,6 +561,37 @@ def _render_animated_frame(
                 sub_alpha = 1.0
 
         alpha_int = int(255 * sub_alpha)
+
+        # --- Subtitle background pill for readability ---
+        pill_cfg = cine.get("subtitle_pill", {})
+        if pill_cfg.get("enabled", True) and subtitle_positions:
+            pill_color_hex = pill_cfg.get("color", "#000000")
+            pill_opacity = pill_cfg.get("opacity", 0.65)
+            pill_px = pill_cfg.get("padding_x", 24)
+            pill_py = pill_cfg.get("padding_y", 12)
+            pill_radius = pill_cfg.get("border_radius", 12)
+            pr, pg, pb = _hex_to_rgb(pill_color_hex)
+            pill_alpha = int(255 * pill_opacity * sub_alpha)
+
+            # Compute bounding box around all subtitle lines
+            _sub_font_size = subtitle_font.size if hasattr(subtitle_font, 'size') else 44
+            line_h = int(_sub_font_size * 1.5)
+            min_x = min(pos[0] for pos in subtitle_positions) - pill_px
+            min_y = subtitle_positions[0][1] - pill_py
+            max_y = subtitle_positions[-1][1] + line_h + pill_py
+            # Measure widest line for max_x
+            max_x = 0
+            for i, line in enumerate(subtitle_lines):
+                bbox = txt_draw.textbbox((0, 0), line, font=subtitle_font)
+                line_w = bbox[2] - bbox[0]
+                max_x = max(max_x, subtitle_positions[i][0] + line_w)
+            max_x += pill_px
+
+            txt_draw.rounded_rectangle(
+                [min_x, min_y, max_x, max_y],
+                radius=pill_radius,
+                fill=(pr, pg, pb, pill_alpha),
+            )
 
         for i, line in enumerate(subtitle_lines):
             x, y = subtitle_positions[i]
@@ -1420,9 +1512,73 @@ def generate_video(
         console.print("[cyan]Overlaying voiceover audio...[/]")
         final_video = final_video.with_audio(global_audio)
 
+    # --- Background music bed ---
+    music_config = config.get("background_music", {})
+    if music_config.get("enabled", False):
+        from moviepy import CompositeAudioClip, concatenate_audioclips
+        from moviepy.audio.fx import AudioFadeIn, AudioFadeOut
+
+        music_tracks = music_config.get("tracks", [])
+        music_volume = music_config.get("volume", 0.08)
+        fade_in = music_config.get("fade_in_seconds", 1.5)
+        fade_out = music_config.get("fade_out_seconds", 2.0)
+
+        if music_tracks:
+            # Deterministic track selection (hash of title for reproducibility)
+            _seed = sum(ord(c) for c in script.title)
+            _track_rel = music_tracks[_seed % len(music_tracks)]
+            track_path = Path(__file__).resolve().parents[2] / _track_rel
+
+            if track_path.exists():
+                music_clip = AudioFileClip(str(track_path))
+                video_duration = final_video.duration
+
+                # Loop music to cover full video duration
+                if music_clip.duration < video_duration:
+                    loops_needed = int(video_duration / music_clip.duration) + 1
+                    music_clip = concatenate_audioclips([music_clip] * loops_needed)
+                music_clip = music_clip.subclipped(0, video_duration)
+
+                # Apply volume and fades
+                music_clip = music_clip.with_volume_scaled(music_volume)
+                music_clip = music_clip.with_effects([
+                    AudioFadeIn(fade_in),
+                    AudioFadeOut(fade_out),
+                ])
+
+                # Mix with existing audio
+                existing_audio = final_video.audio
+                if existing_audio is not None:
+                    final_video = final_video.with_audio(
+                        CompositeAudioClip([existing_audio, music_clip])
+                    )
+                else:
+                    final_video = final_video.with_audio(music_clip)
+                has_any_audio = True
+
+                console.print(
+                    f"[cyan]Background music mixed:[/] {track_path.name} "
+                    f"at {music_volume * 100:.0f}% vol"
+                )
+            else:
+                console.print(
+                    f"[yellow]Music track not found: {track_path}[/yellow]"
+                )
+
     # Export
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # --- Optimized encoding params ---
+    encoding_config = config.get("encoding", {})
+    ffmpeg_params = [
+        "-preset", encoding_config.get("preset", "slow"),
+        "-crf", str(encoding_config.get("crf", 18)),
+        "-pix_fmt", encoding_config.get("pixel_format", "yuv420p"),
+        "-profile:v", encoding_config.get("profile", "high"),
+        "-movflags", "+faststart",  # web-optimized: moov atom at start
+    ]
+    audio_br = encoding_config.get("audio_bitrate", "192k")
 
     console.print(f"[bold cyan]Exporting video to:[/] {output_path}")
     final_video.write_videofile(
@@ -1430,6 +1586,8 @@ def generate_video(
         fps=fps,
         codec="libx264",
         audio_codec="aac" if has_any_audio else None,
+        audio_bitrate=audio_br if has_any_audio else None,
+        ffmpeg_params=ffmpeg_params,
         logger="bar",
     )
 
