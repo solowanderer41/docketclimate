@@ -73,13 +73,19 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
 
 
-_FONT_CACHE_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts" / "extracted"
-_OSWALD_ZIP = Path(__file__).resolve().parents[2] / "assets" / "fonts" / "oswald.zip"
-_oswald_bold_path: Path | None = None  # cached after first extraction
+_FONTS_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
+_FONT_CACHE_DIR = _FONTS_DIR / "extracted"
+_OSWALD_ZIP = _FONTS_DIR / "oswald.zip"
+_oswald_bold_path: Path | None = None  # cached after first lookup
 
 
 def _ensure_oswald_extracted() -> Path | None:
-    """Extract Oswald font from bundled zip if not already extracted.
+    """Find or extract Oswald-Bold font.
+
+    Checks three locations in order:
+    1. assets/fonts/Oswald-Bold.ttf  (user-placed loose files)
+    2. assets/fonts/extracted/       (previously extracted from zip)
+    3. Extract from assets/fonts/oswald.zip
 
     Returns path to Oswald-Bold.ttf, or None if unavailable.
     Result is cached after first successful call.
@@ -88,12 +94,19 @@ def _ensure_oswald_extracted() -> Path | None:
     if _oswald_bold_path is not None:
         return _oswald_bold_path
 
-    # Check if already extracted
-    bold_path = _FONT_CACHE_DIR / "Oswald-Bold.ttf"
-    if bold_path.exists():
-        _oswald_bold_path = bold_path
-        return bold_path
+    # 1. Check for loose font files in assets/fonts/
+    direct_path = _FONTS_DIR / "Oswald-Bold.ttf"
+    if direct_path.exists():
+        _oswald_bold_path = direct_path
+        return direct_path
 
+    # 2. Check extracted/ subdirectory
+    extracted_path = _FONT_CACHE_DIR / "Oswald-Bold.ttf"
+    if extracted_path.exists():
+        _oswald_bold_path = extracted_path
+        return extracted_path
+
+    # 3. Try extracting from zip
     if not _OSWALD_ZIP.exists():
         return None
 
@@ -101,14 +114,13 @@ def _ensure_oswald_extracted() -> Path | None:
         _FONT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(_OSWALD_ZIP, "r") as zf:
             zf.extractall(_FONT_CACHE_DIR)
-        if bold_path.exists():
-            _oswald_bold_path = bold_path
-            return bold_path
+        if extracted_path.exists():
+            _oswald_bold_path = extracted_path
+            return extracted_path
         # Zip may have a different structure — find any Bold .ttf
         for f in _FONT_CACHE_DIR.rglob("*Bold*.ttf"):
             _oswald_bold_path = f
             return f
-        # Last resort: any .ttf in the extracted dir
         for f in _FONT_CACHE_DIR.rglob("*.ttf"):
             _oswald_bold_path = f
             return f
