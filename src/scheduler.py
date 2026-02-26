@@ -19,7 +19,7 @@ from src.curator import CuratedArticle, CurationResult
 from src.content_generator import (
     _build_post_text, _build_unseen_reality_hook, _generate_body_slides,
     _build_voiceover, build_teaser_post, build_wrapup_post, _tag_url,
-    _build_video_caption, _select_hashtags,
+    _build_video_caption, _select_hashtags, get_hook_variant,
     SECTION_HASHTAGS, ISSUE_URL, SUBSCRIBE_URL, PLATFORM_LIMITS,
     VIDEO_CTA_TEXT, VIDEO_CTA_SPOKEN,
 )
@@ -55,6 +55,7 @@ class QueueItem:
     compliance_status: str | None = None     # "pass" | "warn" | "fixed" | "blocked"
     compliance_detail: str | None = None     # human-readable summary
     compliance_original: str | None = None   # pre-fix text (only when auto-fixed)
+    hook_variant: int | None = None          # which hook variant was used (0-4) for A/B testing
 
 
 @dataclass
@@ -359,6 +360,7 @@ def generate_week_schedule(
                 text=text,
                 url=link,
                 hashtags=hashtags,
+                hook_variant=get_hook_variant(article.title),
             ))
 
     # --- Distribute video features across days ---
@@ -412,6 +414,7 @@ def generate_week_schedule(
                 text=caption,
                 url=link,
                 video_script=video_data,
+                hook_variant=get_hook_variant(article.title),
             ))
 
     # --- Distribute news across days (round-robin) ---
@@ -475,6 +478,7 @@ def generate_week_schedule(
                 text=text,
                 url=link,
                 hashtags=hashtags,
+                hook_variant=get_hook_variant(article.title),
             ))
 
     # --- Sunday teaser + Friday wrap-up (Fix M) ---

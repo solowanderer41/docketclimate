@@ -32,6 +32,12 @@ Usage:
     python -m src.main compliance-check   # Run publishing law compliance checks
     python -m src.main compliance-check --fix  # Check + auto-fix queue items
     python -m src.main health-check       # Run system health checks
+    python -m src.main growth-snapshot       # Fetch daily follower counts
+    python -m src.main check-engagement     # Check replies on recent posts
+    python -m src.main approve-exemplar ID    # Quick-approve a post as exemplar
+    python -m src.main approve-exemplar ID --as-is  # Save without editing
+    python -m src.main update-weights     # Recalculate hook variant A/B weights
+    python -m src.main update-weights --dry  # Preview weight changes
 """
 
 import sys
@@ -1889,6 +1895,283 @@ def health_check(no_notify):
     _log_run("health-check", {
         "status": result["status"],
         "checks": {c["name"]: c["status"] for c in result["checks"]},
+    })
+
+
+@cli.command(name="growth-snapshot")
+@click.option("--dry", is_flag=True, help="Preview without saving")
+def growth_snapshot(dry):
+    """Fetch current follower counts and save a daily snapshot.
+
+    Tracks follower growth across all platforms. Run daily (ideally via
+    launchd at 11pm) to build a growth history for trend analysis.
+
+    Examples:
+        python -m src.main growth-snapshot          # fetch + save
+        python -m src.main growth-snapshot --dry     # preview only
+    """
+    from src.growth import take_snapshot, print_growth_summary
+
+    config = _load_config()
+
+    from zoneinfo import ZoneInfo
+    tz_name = config.get("schedule", {}).get("timezone", "America/Los_Angeles")
+    tz = ZoneInfo(tz_name)
+    now = datetime.now(tz)
+
+    console.print(Panel.fit(
+        f"[bold cyan]The Docket — Growth Snapshot[/bold cyan]\n"
+        f"{'DRY RUN' if dry else 'Fetching follower counts'} | "
+        f"{now.strftime('%A, %B %d %Y %H:%M %Z')}",
+        border_style="cyan",
+    ))
+
+    new_snaps = take_snapshot(dry_run=dry)
+
+    console.print()
+    print_growth_summary(config=config)
+
+    _log_run("growth-snapshot", {
+        "dry_run": dry,
+        "snapshots_taken": len(new_snaps),
+        "platforms": [s.platform for s in new_snaps],
+    })
+
+
+@cli.command(name="check-engagement")
+@click.option("--hours", default=24, help="Look back this many hours (default: 24)")
+@click.option("--no-notify", is_flag=True, help="Skip Slack notification for high-priority events")
+def check_engagement(hours, no_notify):
+    """Check for replies and comments on recent posts.
+
+    Scans all platforms for engagement on posts from the last N hours.
+    High-priority replies (questions, substantive comments) trigger
+    Slack notifications.
+
+    Examples:
+        python -m src.main check-engagement              # last 24h
+        python -m src.main check-engagement --hours 48   # last 48h
+        python -m src.main check-engagement --no-notify  # skip Slack
+    """
+    from src.engagement_monitor import (
+        check_recent_engagement, print_engagement_table, notify_high_priority,
+    )
+
+    config = _load_config()
+
+    from zoneinfo import ZoneInfo
+    tz_name = config.get("schedule", {}).get("timezone", "America/Los_Angeles")
+    tz = ZoneInfo(tz_name)
+    now = datetime.now(tz)
+
+    console.print(Panel.fit(
+        f"[bold cyan]The Docket — Engagement Monitor[/bold cyan]\n"
+        f"Checking last {hours}h | {now.strftime('%A, %B %d %Y %H:%M %Z')}",
+        border_style="cyan",
+    ))
+
+    events = check_recent_engagement(hours=hours)
+    print_engagement_table(events)
+
+    if not no_notify and events:
+        notify_high_priority(events, config)
+
+    _log_run("check-engagement", {
+        "hours": hours,
+        "total_events": len(events),
+        "high": sum(1 for e in events if e.priority == "high"),
+        "medium": sum(1 for e in events if e.priority == "medium"),
+        "low": sum(1 for e in events if e.priority == "low"),
+    })
+
+
+@cli.command(name="approve-exemplar")
+@click.argument("item_id")
+@click.option("--as-is", is_flag=True, help="Save without opening editor")
+@click.option("--queue", default=None, help="Specific queue file to search")
+def approve_exemplar(item_id, as_is, queue):
+    """Quick-approve a high-performing post as an exemplar.
+
+    Finds the queue item, optionally opens $EDITOR for a quick polish,
+    and saves as an exemplar with a +50 quality bonus. Use this after
+    the weekly report highlights exemplar candidates.
+
+    Examples:
+        python -m src.main approve-exemplar 20_tue_054
+        python -m src.main approve-exemplar 20_tue_054 --as-is
+    """
+    from src.scheduler import find_active_queue, WeekQueue
+    from src.exemplars import Exemplar, save_exemplar, load_exemplars
+
+    config = _load_config()
+    exemplar_config = config.get("exemplars", {})
+    exemplars_path = PROJECT_ROOT / exemplar_config.get(
+        "path", "data/exemplars/exemplars.json"
+    )
+
+    # Platform character limits
+    platform_limits = {
+        "twitter": config.get("platforms", {}).get("twitter", {}).get("max_chars", 280),
+        "bluesky": config.get("platforms", {}).get("bluesky", {}).get("max_chars", 300),
+        "threads": config.get("platforms", {}).get("threads", {}).get("max_chars", 500),
+    }
+
+    # --- Find the queue item ---
+    item = None
+    wq = None
+
+    # Search all queue files
+    all_queues = sorted(QUEUE_DIR.glob("week_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+    if queue:
+        all_queues = [Path(queue)]
+
+    for qp in all_queues:
+        try:
+            candidate_wq = WeekQueue.load(qp)
+            match = next((i for i in candidate_wq.items if i.id == item_id), None)
+            if match:
+                item = match
+                wq = candidate_wq
+                break
+        except Exception:
+            continue
+
+    if not item:
+        console.print(f"[red]Queue item '{item_id}' not found in any queue.[/red]")
+        return
+
+    if item.status != "posted":
+        console.print(
+            f"[yellow]Item '{item_id}' has status '{item.status}'. "
+            f"Only posted items can be promoted to exemplars.[/yellow]"
+        )
+        return
+
+    # --- Get engagement score from metrics ---
+    score = 0.0
+    try:
+        from src.analytics import load_metrics
+        analytics_config = config.get("analytics", {})
+        metrics_path_str = analytics_config.get("metrics_path", "analytics/metrics.json")
+        all_metrics = load_metrics(PROJECT_ROOT / metrics_path_str)
+        for m in all_metrics:
+            if m.queue_item_id == item.id:
+                score = m.engagement_score
+                break
+    except Exception:
+        pass
+
+    char_limit = platform_limits.get(item.platform, 300)
+
+    # --- Edit or use as-is ---
+    if as_is:
+        clean_text = item.text.strip()
+    else:
+        template = (
+            f"# EXEMPLAR — Quick polish for {item.platform} ({char_limit} chars)\n"
+            f"# Article: {item.article_title}\n"
+            f"# Section: {item.section} | Score: {score:.0f}\n"
+            f"# Lines starting with # are stripped. Save and close when done.\n"
+            f"# Tip: Sharpen hook, tighten framing, trim filler.\n"
+            f"\n"
+            f"{item.text}\n"
+        )
+
+        console.print(
+            f"[cyan]Opening editor for:[/cyan] {item.article_title[:60]} "
+            f"({item.platform}, score {score:.0f})"
+        )
+
+        edited = click.edit(template)
+
+        if edited is None:
+            console.print("[yellow]Editor closed without saving. No exemplar created.[/yellow]")
+            return
+
+        lines = [line for line in edited.splitlines() if not line.strip().startswith("#")]
+        clean_text = "\n".join(lines).strip()
+
+    if not clean_text:
+        console.print("[yellow]Empty text. No exemplar created.[/yellow]")
+        return
+
+    if len(clean_text) > char_limit:
+        console.print(
+            f"[red]Post is {len(clean_text)} chars — exceeds {item.platform} "
+            f"limit of {char_limit}. Please retry.[/red]"
+        )
+        return
+
+    # --- Build and save exemplar ---
+    bonus_score = score + 50.0
+    exemplar_type = "good_video" if item.content_type == "video" else "good_copy"
+
+    exemplar = Exemplar(
+        id=f"ex_{item.id}",
+        exemplar_type=exemplar_type,
+        queue_item_id=item.id,
+        issue_number=wq.issue_number if wq else None,
+        platform=item.platform,
+        article_title=item.article_title,
+        section=item.section,
+        is_feature=item.is_feature,
+        text=clean_text,
+        video_script=item.video_script if exemplar_type == "good_video" else None,
+        flagged_at=datetime.now().isoformat(),
+        engagement_score=bonus_score,
+        notes=f"Auto-promoted from {item.id} (score {score:.0f} + 50 edit bonus)",
+    )
+
+    save_exemplar(exemplar, exemplars_path)
+
+    type_label = "Good Video" if exemplar_type == "good_video" else "Good Copy"
+    console.print(Panel.fit(
+        f"[bold green]{type_label} Exemplar Approved[/bold green]\n\n"
+        f"Article: {item.article_title}\n"
+        f"Platform: {item.platform} ({len(clean_text)}/{char_limit} chars)\n"
+        f"Score: {bonus_score:.0f} (original {score:.0f} + 50 bonus)\n"
+        f"{'Edited' if not as_is else 'Saved as-is'}",
+        border_style="green",
+        title=f"[bold]{exemplar.id}[/bold]",
+    ))
+
+    _log_run("approve-exemplar", {
+        "item_id": item_id,
+        "type": exemplar_type,
+        "article": item.article_title,
+        "score": bonus_score,
+        "as_is": as_is,
+    })
+
+
+@cli.command(name="update-weights")
+@click.option("--dry", is_flag=True, help="Preview weight changes without saving")
+def update_weights_cmd(dry):
+    """Recalculate hook variant A/B testing weights using Thompson sampling.
+
+    Analyzes engagement metrics for each hook variant (0-4) and adjusts
+    selection weights so better-performing variants are used more often.
+    Requires at least 20 posts with variant tracking data.
+
+    Examples:
+        python -m src.main update-weights          # update weights
+        python -m src.main update-weights --dry     # preview only
+    """
+    from src.experiments import update_weights
+
+    config = _load_config()
+    analytics_config = config.get("analytics", {})
+    metrics_path = PROJECT_ROOT / Path(
+        analytics_config.get("metrics_path", "analytics/metrics.json")
+    )
+
+    result = update_weights(metrics_path=metrics_path, dry_run=dry)
+
+    _log_run("update-weights", {
+        "dry_run": dry,
+        "status": result.get("status"),
+        "total_tracked": result.get("total_tracked"),
     })
 
 

@@ -1,0 +1,12 @@
+{
+  "weights": [1.0, 1.0, 1.0, 1.0, 1.0],
+  "updated_at": "2026-02-26T00:00:00",
+  "total_tracked_posts": 0,
+  "per_variant": {
+    "0": {"count": 0, "avg_score": 0, "weight": 0.2, "name": "Sensory\u2192Data\u2192Stakes"},
+    "1": {"count": 0, "avg_score": 0, "weight": 0.2, "name": "Data-first"},
+    "2": {"count": 0, "avg_score": 0, "weight": 0.2, "name": "Question-led"},
+    "3": {"count": 0, "avg_score": 0, "weight": 0.2, "name": "Moral-stakes"},
+    "4": {"count": 0, "avg_score": 0, "weight": 0.2, "name": "Contrarian-reframe"}
+  }
+}

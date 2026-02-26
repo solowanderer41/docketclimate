@@ -32,6 +32,16 @@ load_dotenv(override=True)
 _section_avg_cache: dict[str, float] | None = None
 _feature_vs_news_cache: dict[str, float] | None = None
 
+# ---------------------------------------------------------------------------
+# Hook variant A/B testing state
+# ---------------------------------------------------------------------------
+# Maps article title → chosen variant ID (0-4) for the current generation run.
+# Populated by _build_unseen_reality_hook() when it selects a variant.
+# Read by scheduler.py via get_hook_variant() to store on QueueItem.
+_hook_variant_log: dict[str, int] = {}
+# Variant selection weights loaded once per run from analytics/variant_weights.json
+_variant_weights: list[float] | None = None
+
 console = Console()
 
 # Platform character limits
@@ -644,6 +654,37 @@ def _select_narrative_structure(article: Article) -> tuple[str, str]:
     return (key, f"section_{section}")
 
 
+# ---------------------------------------------------------------------------
+# Variant weight loading + hook variant tracking (A/B testing)
+# ---------------------------------------------------------------------------
+
+def _load_variant_weights() -> list[float]:
+    """Load hook variant selection weights from disk (or return equal defaults)."""
+    global _variant_weights
+    if _variant_weights is not None:
+        return _variant_weights
+
+    weights_path = Path(__file__).parent.parent / "analytics" / "variant_weights.json"
+    try:
+        if weights_path.exists():
+            with open(weights_path) as f:
+                data = json.load(f)
+            weights = data.get("weights", [1.0, 1.0, 1.0, 1.0, 1.0])
+            if len(weights) == 5 and all(isinstance(w, (int, float)) for w in weights):
+                _variant_weights = weights
+                return _variant_weights
+    except Exception:
+        pass
+
+    _variant_weights = [1.0, 1.0, 1.0, 1.0, 1.0]
+    return _variant_weights
+
+
+def get_hook_variant(title: str) -> int | None:
+    """Return the hook variant used for a given article title (or None if untracked)."""
+    return _hook_variant_log.get(title)
+
+
 def _build_unseen_reality_hook(article: Article, variant: int | None = None) -> str:
     """
     Build a hook following the "Unseen Reality" strategy.
@@ -682,19 +723,25 @@ def _build_unseen_reality_hook(article: Article, variant: int | None = None) -> 
                  if s.strip() and len(s.strip()) > 15]
 
     # Auto-select variant if not specified
-    # Content heuristics pick the strongest match; hash rotation avoids
-    # repetition when no strong heuristic fires.
+    # Weighted random selection for A/B testing.  Content heuristics still
+    # influence: data-heavy articles get a boost toward variant 1, question
+    # titles toward variant 2.  But selection is randomised via weights
+    # so we can measure which variants perform best.
     if variant is None:
+        import random
+        weights = list(_load_variant_weights())  # copy so we can adjust
+
+        # Content-heuristic boosts (additive, not exclusive)
         if len(data_points) >= 2:
-            variant = 1  # Data-first when there's rich quantitative material
-        elif "?" in title:
-            variant = 2  # Question-led when the title is already a question
-        else:
-            # Hash-based rotation across 0, 3, 4 for non-obvious articles.
-            # Deterministic per title so regenerating the same article
-            # always gets the same variant.
-            title_hash = sum(ord(c) for c in title)
-            variant = [0, 3, 4][title_hash % 3]
+            weights[1] *= 2.0   # boost Data-first for data-heavy articles
+        if "?" in title:
+            weights[2] *= 2.0   # boost Question for question titles
+
+        variant = random.choices([0, 1, 2, 3, 4], weights=weights, k=1)[0]
+
+    # Record for A/B tracking (scheduler reads this via get_hook_variant)
+    if title:
+        _hook_variant_log[title] = variant
 
     # Build hook by layering elements — longer is better
     parts = []

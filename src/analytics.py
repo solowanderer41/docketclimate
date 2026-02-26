@@ -50,6 +50,8 @@ class PostMetrics:
     replies: int = 0
     views: int | None = None
     engagement_score: float = 0.0
+    hook_variant: int | None = None  # which hook variant (0-4) was used for A/B testing
+    fetched_at_hours: int | None = None  # checkpoint: 4, 24, or 48 hours post-publish
 
     def compute_score(self):
         """Weighted engagement: replies > reposts > likes."""
@@ -361,6 +363,7 @@ def fetch_metrics(queue_path: Path, delay_hours: int = 48) -> list[PostMetrics]:
             reposts=raw["reposts"],
             replies=raw["replies"],
             views=raw.get("views"),
+            hook_variant=getattr(item, "hook_variant", None),
         )
         metrics.compute_score()
         results.append(metrics)
@@ -379,17 +382,20 @@ def save_metrics(metrics: list[PostMetrics], path: Path = DEFAULT_METRICS_PATH):
     Append metrics to the cumulative JSON file.
 
     Does not overwrite existing data — each collection run appends.
-    Deduplicates by (queue_item_id, platform) to avoid double-counting
-    when re-running collection.
+    Deduplicates by (queue_item_id, platform, fetched_at_hours) to
+    support multi-point velocity collection (4h, 24h, 48h checkpoints).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
     existing = load_metrics(path)
-    existing_keys = {(m.queue_item_id, m.platform) for m in existing}
+    existing_keys = {
+        (m.queue_item_id, m.platform, m.fetched_at_hours)
+        for m in existing
+    }
 
     new_metrics = [
         m for m in metrics
-        if (m.queue_item_id, m.platform) not in existing_keys
+        if (m.queue_item_id, m.platform, m.fetched_at_hours) not in existing_keys
     ]
 
     if not new_metrics:
@@ -404,6 +410,114 @@ def save_metrics(metrics: list[PostMetrics], path: Path = DEFAULT_METRICS_PATH):
         f"[green]Saved {len(new_metrics)} new metrics "
         f"({len(all_metrics)} total) to {path}[/green]"
     )
+
+
+def fetch_metrics_at_interval(
+    queue_path: Path,
+    checkpoint_hours: int = 4,
+) -> list[PostMetrics]:
+    """
+    Fetch metrics for posts at a specific hours-since-post checkpoint.
+
+    This enables engagement velocity tracking by collecting metrics at
+    4h, 24h, and 48h marks.  Only fetches posts that were posted within
+    a window around the checkpoint (±2h for 4h, ±4h for 24h/48h).
+
+    Args:
+        queue_path: Path to the active queue JSON.
+        checkpoint_hours: Target checkpoint (4, 24, or 48).
+
+    Returns:
+        List of PostMetrics with fetched_at_hours set.
+    """
+    from src.scheduler import WeekQueue
+
+    queue = WeekQueue.load(queue_path)
+    now = datetime.now().astimezone()
+
+    # Window tolerance: ±2h for 4h checkpoint, ±4h for longer checkpoints
+    tolerance_hours = 2 if checkpoint_hours <= 4 else 4
+
+    metrics = []
+    for item in queue.items:
+        if item.status != "posted" or not item.post_uri:
+            continue
+        if not item.posted_at:
+            continue
+
+        try:
+            posted_dt = datetime.fromisoformat(item.posted_at)
+            if posted_dt.tzinfo is None:
+                posted_dt = posted_dt.astimezone()
+        except (ValueError, TypeError):
+            continue
+
+        hours_since = (now - posted_dt).total_seconds() / 3600
+        if abs(hours_since - checkpoint_hours) > tolerance_hours:
+            continue
+
+        # Fetch metrics from the appropriate platform
+        raw = _fetch_raw_metrics(item)
+        if raw is None:
+            continue
+
+        m = PostMetrics(
+            queue_item_id=item.id,
+            platform=item.platform,
+            post_uri=item.post_uri,
+            article_title=item.article_title,
+            section=item.section,
+            is_feature=item.is_feature,
+            hook=item.text[:200],
+            posted_at=item.posted_at or "",
+            fetched_at=datetime.now().isoformat(),
+            likes=raw["likes"],
+            reposts=raw["reposts"],
+            replies=raw["replies"],
+            views=raw.get("views"),
+            hook_variant=getattr(item, "hook_variant", None),
+            fetched_at_hours=checkpoint_hours,
+        )
+        m.engagement_score = m.likes + (m.reposts * 2) + (m.replies * 3)
+        metrics.append(m)
+
+    return metrics
+
+
+def _fetch_raw_metrics(item) -> dict | None:
+    """Fetch raw metrics dict for a queue item from its platform API."""
+    try:
+        if item.platform == "bluesky":
+            return _fetch_bluesky_metrics(item.post_uri)
+        elif item.platform == "twitter":
+            return _fetch_twitter_metrics(item.post_uri)
+        elif item.platform == "threads":
+            return _fetch_threads_metrics(item.post_uri)
+        elif item.platform == "reels":
+            return _fetch_reels_metrics(item.post_uri)
+        else:
+            return None
+    except Exception:
+        return None
+
+
+def get_engagement_velocity(
+    item_id: str,
+    path: Path = DEFAULT_METRICS_PATH,
+) -> dict[int, float]:
+    """
+    Return engagement score at each collected checkpoint for a queue item.
+
+    Returns:
+        {4: score_at_4h, 24: score_at_24h, 48: score_at_48h}
+        (only includes checkpoints that have data)
+    """
+    metrics = load_metrics(path)
+    velocity = {}
+    for m in metrics:
+        if m.queue_item_id == item_id and m.fetched_at_hours is not None:
+            velocity[m.fetched_at_hours] = m.engagement_score
+    return dict(sorted(velocity.items()))
 
 
 def load_metrics(path: Path = DEFAULT_METRICS_PATH) -> list[PostMetrics]:
@@ -465,6 +579,85 @@ def get_top_posts(path: Path = DEFAULT_METRICS_PATH, limit: int = 10) -> list[Po
     """Get the top-performing posts by engagement score."""
     metrics = load_metrics(path)
     return sorted(metrics, key=lambda m: m.engagement_score, reverse=True)[:limit]
+
+
+def find_exemplar_candidates(
+    path: Path = DEFAULT_METRICS_PATH,
+    threshold_multiplier: float = 2.0,
+) -> list[PostMetrics]:
+    """
+    Find posts scoring above a multiple of their section average.
+
+    These are strong exemplar candidates — posts that significantly
+    outperformed their peers and likely contain patterns worth replicating.
+
+    Args:
+        path: Path to metrics JSON.
+        threshold_multiplier: How many times the section average a post
+            must exceed to be flagged (default: 2×).
+
+    Returns:
+        List of PostMetrics that beat the threshold, sorted by score descending.
+    """
+    metrics = load_metrics(path)
+    if not metrics:
+        return []
+
+    section_avgs = get_section_averages(path)
+    if not section_avgs:
+        return []
+
+    candidates = []
+    for m in metrics:
+        avg = section_avgs.get(m.section, 0)
+        if avg > 0 and m.engagement_score >= avg * threshold_multiplier:
+            candidates.append(m)
+
+    return sorted(candidates, key=lambda m: m.engagement_score, reverse=True)
+
+
+def get_variant_performance(path: Path = DEFAULT_METRICS_PATH) -> dict[int, dict]:
+    """
+    Compute engagement stats per hook variant (0-4).
+
+    Returns:
+        {variant_id: {count, avg_score, total_score, avg_likes, avg_reposts, avg_replies}}
+
+    Only includes metrics that have a recorded hook_variant.
+    """
+    metrics = load_metrics(path)
+    if not metrics:
+        return {}
+
+    variant_data: dict[int, dict] = {}
+    for m in metrics:
+        v = m.hook_variant
+        if v is None:
+            continue
+        if v not in variant_data:
+            variant_data[v] = {
+                "scores": [], "likes": [], "reposts": [], "replies": [],
+            }
+        d = variant_data[v]
+        d["scores"].append(m.engagement_score)
+        d["likes"].append(m.likes)
+        d["reposts"].append(m.reposts)
+        d["replies"].append(m.replies)
+
+    result = {}
+    for variant_id in sorted(variant_data.keys()):
+        d = variant_data[variant_id]
+        n = len(d["scores"])
+        result[variant_id] = {
+            "count": n,
+            "avg_score": sum(d["scores"]) / n if n else 0,
+            "total_score": sum(d["scores"]),
+            "avg_likes": sum(d["likes"]) / n if n else 0,
+            "avg_reposts": sum(d["reposts"]) / n if n else 0,
+            "avg_replies": sum(d["replies"]) / n if n else 0,
+        }
+
+    return result
 
 
 def print_metrics_table(metrics: list[PostMetrics]):
@@ -848,11 +1041,50 @@ def _build_report_data(
         "news_count": len(news_metrics),
     }
 
+    # Hook variant performance (A/B testing)
+    variant_data_raw: dict[int, dict] = {}
+    for m in week_metrics:
+        v = m.hook_variant
+        if v is None:
+            continue
+        if v not in variant_data_raw:
+            variant_data_raw[v] = {"scores": [], "count": 0}
+        variant_data_raw[v]["scores"].append(m.engagement_score)
+        variant_data_raw[v]["count"] += 1
+
+    variant_perf = {}
+    for vid in sorted(variant_data_raw.keys()):
+        d = variant_data_raw[vid]
+        n = d["count"]
+        variant_perf[vid] = {
+            "count": n,
+            "avg_score": sum(d["scores"]) / n if n else 0,
+            "total_score": sum(d["scores"]),
+        }
+
     # Queue completion stats
     total_items = len(queue.items)
     posted = len([i for i in queue.items if i.status == "posted"])
     failed = len([i for i in queue.items if i.status == "failed"])
     pending = len([i for i in queue.items if i.status == "pending"])
+
+    # Exemplar candidates: posts beating 2× their section average
+    exemplar_candidates_list = []
+    for m in sorted_metrics:
+        sec_d = section_data.get(m.section, {})
+        sec_scores = sec_d.get("scores", [])
+        sec_avg = sum(sec_scores) / len(sec_scores) if sec_scores else 0
+        if sec_avg > 0 and m.engagement_score >= sec_avg * 2.0:
+            exemplar_candidates_list.append({
+                "queue_item_id": m.queue_item_id,
+                "title": m.article_title,
+                "platform": m.platform,
+                "section": m.section,
+                "score": m.engagement_score,
+                "section_avg": sec_avg,
+                "multiplier": m.engagement_score / sec_avg if sec_avg else 0,
+                "hook_preview": m.hook[:120] if m.hook else "",
+            })
 
     return {
         "week_start": queue.week_start,
@@ -881,6 +1113,8 @@ def _build_report_data(
         "top_posts": top_posts,
         "bottom_posts": bottom_posts,
         "feature_vs_news": feature_vs_news,
+        "variant_performance": variant_perf,
+        "exemplar_candidates": exemplar_candidates_list,
     }
 
 
@@ -1023,6 +1257,41 @@ def _print_weekly_report(report: dict, queue) -> None:
 
         console.print(table)
 
+    # Hook variant A/B testing performance
+    variant_perf = report.get("variant_performance", {})
+    if variant_perf:
+        console.print()
+        _VARIANT_NAMES = {
+            0: "Sensory→Data→Stakes",
+            1: "Data-first",
+            2: "Question-led",
+            3: "Moral-stakes",
+            4: "Contrarian-reframe",
+        }
+        table = Table(title="Hook Variant A/B Performance", show_lines=False)
+        table.add_column("Var", width=4, justify="center")
+        table.add_column("Strategy", width=24)
+        table.add_column("Posts", justify="center", width=7)
+        table.add_column("Avg Score", justify="right", width=10, style="bold")
+        table.add_column("Total", justify="right", width=8)
+
+        best_variant = max(variant_perf.items(), key=lambda x: x[1]["avg_score"]) if variant_perf else None
+        for vid_str, d in sorted(variant_perf.items(), key=lambda x: int(x[0])):
+            vid = int(vid_str)
+            name = _VARIANT_NAMES.get(vid, f"Variant {vid}")
+            label = f"{vid}"
+            if best_variant and vid == int(best_variant[0]):
+                label = f"[green]{vid} ★[/green]"
+            table.add_row(
+                label,
+                name,
+                str(d["count"]),
+                f"{d['avg_score']:.1f}",
+                f"{d['total_score']:.0f}",
+            )
+
+        console.print(table)
+
     # Top posts
     top_posts = report.get("top_posts", [])
     if top_posts:
@@ -1049,6 +1318,22 @@ def _print_weekly_report(report: dict, queue) -> None:
         )
         winner = "Features" if fvn["feature_avg"] > fvn["news_avg"] else "News"
         console.print(f"  → [cyan]{winner} performed better this week[/cyan]")
+
+    # Exemplar candidates (auto-promotion)
+    exemplar_candidates = report.get("exemplar_candidates", [])
+    if exemplar_candidates:
+        console.print()
+        console.print("[bold]⭐ Exemplar Candidates[/bold] (>2× section average):")
+        for i, c in enumerate(exemplar_candidates[:5], 1):
+            console.print(
+                f"  {i}. [bold]{c['title'][:50]}[/bold]\n"
+                f"     [{c['platform']}] {c['section']} — "
+                f"score [bold]{c['score']:.0f}[/bold] "
+                f"(section avg {c['section_avg']:.0f}, {c['multiplier']:.1f}×)"
+            )
+        console.print(
+            f"\n  [dim]Quick-approve: python -m src.main approve-exemplar <ITEM_ID>[/dim]"
+        )
 
     # Actionable insights
     console.print()
