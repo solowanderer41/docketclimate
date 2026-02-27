@@ -259,11 +259,10 @@ def check_attribution(
                     "detail": "Source link or credit present",
                     "auto_fixed": False}
 
-        # No attribution found.  This is expected for no-link CTA rotation
-        # posts — the pipeline intentionally omits links on some posts for
-        # algorithmic distribution.  Flag as advisory warn, not fail.
-        return {"name": "Attribution", "status": "warn",
-                "detail": "No source link or credit text (may be CTA rotation)",
+        # No attribution found.  Links are required in all text posts —
+        # every post must include a source link or credit text.
+        return {"name": "Attribution", "status": "fail",
+                "detail": "No source link or credit text — links are required in all text posts",
                 "auto_fixed": False}
 
     except Exception as e:

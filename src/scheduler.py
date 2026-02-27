@@ -321,19 +321,20 @@ def generate_week_schedule(
                             campaign=campaign, content=content_tag)
 
             # ── Cold-start CTA rotation ──────────────────────────
+            # Always keep the article link (platforms need it for link
+            # cards / facets / reply-with-link).  CTA rotation only
+            # controls hashtags and follow prompts.
             hook_text = article.hook
             rotation_slot = cta_counter % 10
             if _is_cold_start:
                 if rotation_slot in (0, 1, 2, 3, 4):
-                    # 50%: no link — pure engagement play
-                    link = ""
+                    # 50%: clean look — link but no hashtags
                     hashtags = []
                 elif rotation_slot in (5, 6, 7):
-                    # 30%: follow-driving — append follow prompt, no link
-                    link = ""
+                    # 30%: follow-driving — link + follow prompt, no hashtags
                     hashtags = []
                     hook_text = hook_text + "\n\n" + _follow_prompts[cta_counter % len(_follow_prompts)]
-                # else (8, 9): 20% — keep the link as-is
+                # else (8, 9): 20% — keep link + hashtags as-is
 
             # Build post text
             tag_str = " ".join(hashtags)
@@ -439,19 +440,20 @@ def generate_week_schedule(
                             campaign=campaign, content=content_tag)
 
             # ── Cold-start CTA rotation ──────────────────────────
+            # Always keep the article link (platforms need it for link
+            # cards / facets / reply-with-link).  CTA rotation only
+            # controls hashtags and follow prompts.
             hook_text = article.hook
             rotation_slot = cta_counter % 10
             if _is_cold_start:
                 if rotation_slot in (0, 1, 2, 3, 4):
-                    # 50%: no link — pure engagement play
-                    link = ""
+                    # 50%: clean look — link but no hashtags
                     hashtags = []
                 elif rotation_slot in (5, 6, 7):
-                    # 30%: follow-driving — append follow prompt, no link
-                    link = ""
+                    # 30%: follow-driving — link + follow prompt, no hashtags
                     hashtags = []
                     hook_text = hook_text + "\n\n" + _follow_prompts[cta_counter % len(_follow_prompts)]
-                # else (8, 9): 20% — keep the link as-is
+                # else (8, 9): 20% — keep link + hashtags as-is
 
             # Build post text
             tag_str = " ".join(hashtags)

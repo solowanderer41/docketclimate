@@ -237,11 +237,12 @@ cold_start:
   news_per_day: 1                  # override: 1 news per platform per day
   videos_per_week: 2               # override: fewer videos during growth phase
   skip_teaser_wrapup: true         # defer Sunday teaser + Friday wrap-up until audience exists
-  # CTA rotation during cold-start (Fix X3 — applied when cold_start.enabled)
+  # CTA rotation during cold-start (link is ALWAYS included — rotation
+  # controls hashtags and follow prompts only, never strips the URL)
   cta_ratios:
-    no_link: 0.50                  # pure engagement — max algorithmic distribution
-    follow_driving: 0.30           # "Follow @docketclimate for more tomorrow"
-    link: 0.20                     # article/subscribe links (preserved for some clicks)
+    clean_look: 0.50               # link only — no hashtags (clean, native feel)
+    follow_driving: 0.30           # link + follow prompt, no hashtags
+    full: 0.20                     # link + hashtags
   # Video overrides for discovery phase (Fix X4)
   video:
     body_slides: 3                 # 2-3 body slides instead of 4-5 (target 15-20s)
