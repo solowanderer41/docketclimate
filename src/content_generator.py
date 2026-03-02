@@ -950,8 +950,10 @@ Example format: {{"twitter": "hook text...", "bluesky": "hook text...", "threads
                 hook_text = _truncate_to_limit(hook_text, limit)
             if len(hook_text) <= limit:
                 valid[pname] = hook_text
-        # Require at least 2 valid hooks (otherwise fallback is better)
-        if len(valid) < 2:
+        # Require at least half the requested platforms (min 1).
+        # Video calls request only 1 platform; text calls request 3.
+        min_required = max(1, len(platforms) // 2)
+        if len(valid) < min_required:
             return None
         # Log success
         counts = ", ".join(f"{p}({len(t)})" for p, t in valid.items())
