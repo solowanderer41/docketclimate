@@ -255,14 +255,23 @@ class ReelsPublisher:
             return result
 
         except requests.HTTPError as e:
-            error_detail = ""
             try:
-                error_detail = e.response.json().get("error", {}).get("message", "")
+                resp_body = e.response.text
+                error_json = e.response.json().get("error", {})
+                error_detail = error_json.get("message", "")
+                error_code = error_json.get("code", "")
+                fb_trace = error_json.get("fbtrace_id", "")
+                console.print(
+                    f"[bold red]Instagram API error: {e.response.status_code} "
+                    f"code={error_code} {error_detail}[/bold red]"
+                )
+                if fb_trace:
+                    console.print(f"[dim]FB trace ID: {fb_trace}[/dim]")
+                console.print(f"[dim]Full response: {resp_body[:500]}[/dim]")
             except Exception:
-                pass
-            console.print(
-                f"[bold red]Instagram API error: {e} {error_detail}[/bold red]"
-            )
+                console.print(
+                    f"[bold red]Instagram API error: {e}[/bold red]"
+                )
             raise
         except Exception as e:
             console.print(
