@@ -9,4 +9,4 @@ logs/
 analytics/
 data/
 .DS_Store
-test_*.py
+# test_*.py  — tests now tracked in tests/ directory

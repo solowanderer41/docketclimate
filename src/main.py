@@ -193,9 +193,15 @@ def post():
 
 
 @cli.command()
-def video():
+@click.option("--ae", is_flag=True, help="Force After Effects rendering (override config)")
+def video(ae):
     """Generate videos only"""
     config = _load_config()
+
+    if ae:
+        config.setdefault("video", {})["render_engine"] = "aftereffects"
+        console.print("[cyan]Using After Effects render engine (--ae flag)[/cyan]")
+
     issue_path = _get_latest_issue_path()
     if not issue_path:
         console.print("[red]No scraped issue found. Run 'scrape' first.[/red]")
@@ -441,6 +447,9 @@ def _do_generate_videos(video_scripts, config):
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    video_config = config.get("video", {})
+    render_engine = video_config.get("render_engine", "moviepy")
+
     for i, script in enumerate(video_scripts, 1):
         console.print(f"\n[bold]Generating video {i}/{len(video_scripts)}: {script.title}[/bold]")
 
@@ -456,8 +465,14 @@ def _do_generate_videos(video_scripts, config):
         # Step 2: Generate video
         video_path = OUTPUT_DIR / f"video_{i}.mp4"
         try:
-            console.print("  Generating video...")
-            generate_video(script, audio_path, video_path, config.get("video", {}))
+            if render_engine == "aftereffects":
+                from src.video.ae_renderer import render_video as ae_render_video
+
+                console.print("  Generating video (After Effects)...")
+                ae_render_video(script, audio_path, video_path, video_config)
+            else:
+                console.print("  Generating video (MoviePy)...")
+                generate_video(script, audio_path, video_path, video_config)
             console.print(f"  [green]Video saved: {video_path}[/green]")
         except Exception as e:
             console.print(f"  [red]Video generation failed: {e}[/red]")
@@ -1004,7 +1019,8 @@ def token_status():
 @click.argument("item_id")
 @click.option("--dry", is_flag=True, help="Dry run — show what would happen without deleting or posting")
 @click.option("--keep-old", is_flag=True, help="Skip deleting the old Reel (just regenerate and post)")
-def repost_reel(item_id, dry, keep_old):
+@click.option("--ae", is_flag=True, help="Force After Effects rendering (override config)")
+def repost_reel(item_id, dry, keep_old, ae):
     """Delete an old Reel and re-publish with the current video pipeline.
 
     Finds the queue item by ID, deletes the old Instagram Reel,
@@ -1013,8 +1029,13 @@ def repost_reel(item_id, dry, keep_old):
 
     Example:
         python -m src.main repost-reel 18_fri_050
+        python -m src.main repost-reel 18_fri_050 --ae  # Force After Effects
     """
     config = _load_config()
+
+    if ae:
+        config.setdefault("video", {})["render_engine"] = "aftereffects"
+        console.print("[cyan]Using After Effects render engine (--ae flag)[/cyan]")
 
     # 1. Load the queue and find the item
     from src.scheduler import find_active_queue, WeekQueue

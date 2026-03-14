@@ -50,6 +50,7 @@ platforms:
     resolution: [1080, 1920]
 
 video:
+  render_engine: "moviepy"  # "moviepy" (current) or "aftereffects" (nexrender cloud AE)
   resolution: [1080, 1920]  # 9:16 vertical
   fps: 30
   background_color: "#1a1a2e"
@@ -164,6 +165,26 @@ video:
   narrative:
     overlay_opacity: 0.55
     particles_enabled: false
+
+  # After Effects cloud rendering (nexrender — self-hosted)
+  # Active only when render_engine: "aftereffects"
+  aftereffects:
+    provider: "nexrender"
+    server_url_env: "NEXRENDER_SERVER_URL"  # env var for nexrender server URL
+    secret_env: "NEXRENDER_SECRET"          # env var for shared secret
+    templates:
+      cinematic: ""                # R2-hosted .aep URLs — set after uploading templates
+      narrative: ""
+      stock_broll: ""
+      gradient: ""
+    composition: "main"            # AE composition name to render
+    render_timeout_seconds: 600    # max wait for a single render (10 min)
+    poll_interval_seconds: 10      # how often to check render status
+    encoding:                      # ffmpeg params for nexrender postrender action
+      preset: "slow"
+      crf: 18
+      pixel_format: "yuv420p"
+      audio_bitrate: "192k"
 
   # Background music bed (mixed under voiceover at low volume)
   background_music:

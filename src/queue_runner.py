@@ -690,14 +690,40 @@ def _post_video_item(item: QueueItem, config: dict) -> tuple[bool, str]:
         # Slide structure: Title (VO + beat), Hook (VO), Body 1..N (VO), CTA (VO)
         # Each slide gets its own voiceover segment — no alignment padding needed.
 
-        console.print(f"    [dim]Rendering video ({video_tier})...[/dim]")
-        generate_video(
-            script, voiceover_paths, video_path, video_config,
-            stock_clip_path=stock_clip_path,
-            video_tier=video_tier,
-            slide_image_paths=slide_image_paths or None,
-            background_image_path=background_image_path,
-        )
+        render_engine = video_config.get("render_engine", "moviepy")
+        console.print(f"    [dim]Rendering video ({video_tier}, engine={render_engine})...[/dim]")
+
+        if render_engine == "aftereffects":
+            try:
+                from src.video.ae_renderer import render_video as ae_render_video
+
+                ae_render_video(
+                    script, voiceover_paths, video_path, video_config,
+                    stock_clip_path=stock_clip_path,
+                    video_tier=video_tier,
+                    slide_image_paths=slide_image_paths or None,
+                    background_image_path=background_image_path,
+                )
+            except Exception as ae_err:
+                console.print(
+                    f"    [yellow]AE render failed ({ae_err}), "
+                    f"falling back to MoviePy...[/yellow]"
+                )
+                generate_video(
+                    script, voiceover_paths, video_path, video_config,
+                    stock_clip_path=stock_clip_path,
+                    video_tier=video_tier,
+                    slide_image_paths=slide_image_paths or None,
+                    background_image_path=background_image_path,
+                )
+        else:
+            generate_video(
+                script, voiceover_paths, video_path, video_config,
+                stock_clip_path=stock_clip_path,
+                video_tier=video_tier,
+                slide_image_paths=slide_image_paths or None,
+                background_image_path=background_image_path,
+            )
 
         # Step 5: Upload to cloud storage
         storage_key = f"videos/{item.id}.mp4"
