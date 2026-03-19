@@ -52,6 +52,40 @@ DEFAULT_SECTION_COLORS = {
 # ---------------------------------------------------------------------------
 
 
+def _wrap_text(text: str, font_size: int, box_width: int = 920) -> str:
+    """Wrap text with newlines so it fits within a given pixel width.
+
+    AE point text doesn't auto-wrap, and AE 2026 doesn't allow setting
+    boxText via ExtendScript. So we pre-wrap before injection.
+
+    Uses an approximation: Arial at a given font size has an average
+    character width of ~0.55× the font size.
+
+    Args:
+        text: The raw text string.
+        font_size: Font size in px used in the AE layer.
+        box_width: Usable pixel width (default 920 = 1080 - 80px margins).
+
+    Returns:
+        Text with ``\\n`` inserted at word boundaries.
+    """
+    avg_char_w = font_size * 0.55
+    max_chars = int(box_width / avg_char_w)
+    words = text.split(" ")
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        test = word if not current else f"{current} {word}"
+        if len(test) > max_chars and current:
+            lines.append(current)
+            current = word
+        else:
+            current = test
+    if current:
+        lines.append(current)
+    return "\n".join(lines)
+
+
 def _hex_to_rgba(hex_str: str) -> List[float]:
     """Convert a hex color string to a normalized RGBA array for After Effects.
 
@@ -377,18 +411,28 @@ def build_nexrender_job(
 
     assets = []  # type: List[dict]
 
-    # --- Text layers ---
+    # --- Text layers (pre-wrapped for AE point text) ---
+    # Font sizes must match the AE template layer sizes
+    LAYER_FONT_SIZES = {
+        "title_text": 64,
+        "hook_text": 64,
+        "cta_text": 48,
+        "closing_text": 58,
+    }
+    BODY_FONT_SIZE = 54
+
     text_layers = {
         "title_text": script.title,
         "hook_text": script.hook or "",
         "cta_text": script.cta or "",
     }
     for layer_name, value in text_layers.items():
+        fs = LAYER_FONT_SIZES.get(layer_name, 54)
         assets.append({
             "type": "data",
             "layerName": layer_name,
             "property": "Source Text",
-            "value": value,
+            "value": _wrap_text(value, fs),
         })
 
     # Body slide text
@@ -397,7 +441,7 @@ def build_nexrender_job(
             "type": "data",
             "layerName": f"body_text_{i + 1}",
             "property": "Source Text",
-            "value": slide_text,
+            "value": _wrap_text(slide_text, BODY_FONT_SIZE),
         })
     # Clear unused body slots (templates may have up to 5)
     for i in range(len(script.body_slides), 5):
@@ -466,13 +510,13 @@ def build_nexrender_job(
                 "value": value,
             })
 
-        # Per-slide AI images
+        # Per-slide AI images (template layers are 1-indexed: bg_image_1, bg_image_2, ...)
         slide_image_urls = asset_urls.get("slide_image_urls", [])
         for i, url in enumerate(slide_image_urls):
             if url:
                 assets.append({
                     "type": "image",
-                    "layerName": f"slide_image_{i}",
+                    "layerName": f"bg_image_{i + 1}",
                     "src": url,
                 })
 
@@ -555,6 +599,65 @@ def build_nexrender_job(
 # ---------------------------------------------------------------------------
 
 
+def _swap_desktop_assets(
+    slide_image_paths: Optional[List[Optional[Path]]] = None,
+    voiceover_text: Optional[str] = None,
+    voiceover_path: Optional[Path] = None,
+) -> None:
+    """Swap Desktop placeholder files with real assets before AE render.
+
+    AE 2026 broke replaceSource() in ExtendScript, so we can't swap footage
+    at render time. Instead, the .aep template references fixed Desktop paths
+    (placeholder_1.png, voiceover.mp3, etc.) and we overwrite those files
+    before submitting the render job.
+
+    Args:
+        slide_image_paths: AI image paths to copy (resized to 1080x1920).
+        voiceover_text: Text to generate TTS audio from.
+        voiceover_path: Pre-generated voiceover MP3 path (skips TTS).
+    """
+    from PIL import Image
+
+    desktop = Path.home() / "Desktop"
+
+    # Swap slide images (resize to exact 1080x1920 — dimension mismatch
+    # breaks the AE footage items and causes black frames)
+    if slide_image_paths:
+        for i, img_path in enumerate(slide_image_paths, 1):
+            dst = desktop / f"placeholder_{i}.png"
+            if img_path and Path(img_path).exists():
+                img = Image.open(img_path)
+                if img.size != (1080, 1920):
+                    img = img.resize((1080, 1920), Image.LANCZOS)
+                img.save(dst)
+                console.print(f"    [dim]Swapped placeholder_{i}.png[/dim]")
+            else:
+                # Restore dark placeholder if no image provided
+                img = Image.new("RGB", (1080, 1920), (18, 18, 18))
+                img.save(dst)
+
+    # Swap voiceover audio
+    vo_dst = desktop / "voiceover.mp3"
+    if voiceover_path and Path(voiceover_path).exists():
+        import shutil
+        shutil.copy2(voiceover_path, vo_dst)
+        console.print(f"    [dim]Copied voiceover to Desktop[/dim]")
+    elif voiceover_text:
+        from src.video.voiceover import generate_voiceover
+        generate_voiceover(voiceover_text, vo_dst)
+        console.print(f"    [dim]Generated voiceover to Desktop[/dim]")
+
+
+def _restore_desktop_placeholders() -> None:
+    """Restore clean dark placeholders after render completes."""
+    from PIL import Image
+
+    desktop = Path.home() / "Desktop"
+    for name in ["title", "hook", "1", "2", "3", "closing"]:
+        img = Image.new("RGB", (1080, 1920), (18, 18, 18))
+        img.save(desktop / f"placeholder_{name}.png")
+
+
 def render_video(
     script: "VideoScript",
     voiceover_path: "Optional[List[Optional[Path]]]" = None,
@@ -565,11 +668,17 @@ def render_video(
     slide_image_paths: Optional[List[Optional[Path]]] = None,
     background_image_path: Optional[Path] = None,
 ) -> Path:
-    """Generate a video via After Effects cloud rendering.
+    """Generate a video via After Effects + Nexrender.
 
     Drop-in replacement for generator.generate_video() — same signature,
-    same return value. Stages assets to R2, submits a nexrender job,
-    polls for completion, and downloads the finished MP4.
+    same return value.
+
+    Uses Desktop-path-swap approach for AE 2026 compatibility:
+    1. Copy AI images (resized to 1080x1920) to Desktop placeholder paths
+    2. Generate/copy voiceover MP3 to Desktop
+    3. Submit nexrender job with text-only data assets
+    4. Poll for completion, copy output to output_path
+    5. Restore clean placeholders
 
     Args:
         script: The structured content for the video.
@@ -599,51 +708,76 @@ def render_video(
 
     if output_path is None:
         output_path = Path("output") / "ae_render.mp4"
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     ae_config = config.get("aftereffects", {})
-    templates = ae_config.get("templates", {})
     composition = ae_config.get("composition", "main")
     poll_interval = ae_config.get("poll_interval_seconds", 10)
     render_timeout = ae_config.get("render_timeout_seconds", 600)
 
-    # Step 1: Stage assets to R2 (public URLs for nexrender to fetch)
-    console.print("    [dim]Staging assets for AE render...[/dim]")
-    asset_urls = upload_assets_for_render(
-        voiceover_paths=voiceover_path,
+    # Template URL from R2
+    storage_public_url = os.getenv("STORAGE_PUBLIC_URL", "")
+    template_url = f"{storage_public_url}/cinematic.aep"
+
+    # Step 1: Swap Desktop placeholders with real assets
+    console.print("    [dim]Preparing assets for AE render...[/dim]")
+
+    # Resolve voiceover: combine per-slide paths into single, or use text
+    single_vo_path = None
+    if isinstance(voiceover_path, list):
+        # Find first existing per-slide voiceover
+        for vp in voiceover_path:
+            if vp and Path(vp).exists():
+                single_vo_path = Path(vp)
+                break
+    elif voiceover_path and Path(voiceover_path).exists():
+        single_vo_path = Path(voiceover_path)
+
+    _swap_desktop_assets(
         slide_image_paths=slide_image_paths,
-        background_image_path=background_image_path,
-        stock_clip_path=stock_clip_path,
+        voiceover_text=getattr(script, "voiceover_text", None) if not single_vo_path else None,
+        voiceover_path=single_vo_path,
     )
 
-    staged_count = (
-        len([u for u in asset_urls["voiceover_urls"] if u])
-        + len([u for u in asset_urls["slide_image_urls"] if u])
-        + (1 if asset_urls["background_image_url"] else 0)
-        + (1 if asset_urls["stock_clip_url"] else 0)
-    )
-    console.print(f"    [dim]Staged {staged_count} assets to R2[/dim]")
+    # Step 2: Build text-only nexrender job
+    # (images and audio are loaded from Desktop paths by the .aep template)
+    TITLE_FS, HOOK_FS, BODY_FS, CLOSING_FS, CTA_FS = 72, 42, 42, 54, 48
 
-    # Step 2: Select template
-    template_url = select_template(
-        video_tier=video_tier,
-        has_slide_images=bool(slide_image_paths),
-        has_background_image=background_image_path is not None,
-        has_stock_clip=stock_clip_path is not None,
-        templates=templates,
-    )
-    console.print(f"    [dim]Using AE template: {template_url}[/dim]")
+    closing_text = getattr(script, "closing_slide", "") or ""
+    cta_text = getattr(script, "cta", "") or "Follow for more stories like this at The Docket."
 
-    # Step 3: Build nexrender job payload
-    job_payload = build_nexrender_job(
-        script=script,
-        asset_urls=asset_urls,
-        video_config=config,
-        video_tier=video_tier,
-        template_url=template_url,
-        composition=composition,
-    )
+    assets = [
+        {"type": "data", "layerName": "title_text", "property": "Source Text",
+         "value": _wrap_text(script.title.upper(), TITLE_FS)},
+        {"type": "data", "layerName": "hook_text", "property": "Source Text",
+         "value": _wrap_text(script.hook or "", HOOK_FS)},
+        {"type": "data", "layerName": "closing_text", "property": "Source Text",
+         "value": _wrap_text(closing_text, CLOSING_FS)},
+    ]
 
-    # Step 4: Submit render job
+    for i, slide_text in enumerate(script.body_slides):
+        assets.append({
+            "type": "data",
+            "layerName": f"body_text_{i + 1}",
+            "property": "Source Text",
+            "value": _wrap_text(slide_text, BODY_FS),
+        })
+
+    job_payload = {
+        "template": {"src": template_url, "composition": composition},
+        "assets": assets,
+        "actions": {
+            "postrender": [
+                {"module": "@nexrender/action-encode", "preset": "mp4",
+                 "output": "render_output.mp4"},
+                {"module": "@nexrender/action-copy",
+                 "output": str(output_path.resolve())},
+            ]
+        },
+    }
+
+    # Step 3: Submit and wait
     console.print("    [cyan]Submitting AE render to nexrender...[/cyan]")
     client = NexrenderClient()
     try:
@@ -651,7 +785,6 @@ def render_video(
         job_uid = render_job["uid"]
         console.print(f"    [dim]Render job: {job_uid}[/dim]")
 
-        # Step 5: Poll for completion
         render_result = client.wait_for_job(
             job_uid,
             poll_interval=poll_interval,
@@ -662,12 +795,19 @@ def render_video(
             f"(state: {render_result.get('state', '?')})[/green]"
         )
 
-        # Step 6: Download rendered MP4
-        console.print(f"    [dim]Downloading rendered video...[/dim]")
-        client.download_output(job_uid, output_path)
-        console.print(f"    [green]Saved: {output_path}[/green]")
+        if not output_path.exists():
+            raise RuntimeError(
+                f"Render finished but output not found at {output_path}"
+            )
+
+        console.print(
+            f"    [green]Saved: {output_path} "
+            f"({output_path.stat().st_size // 1024} KB)[/green]"
+        )
 
     finally:
         client.close()
+        # Restore clean placeholders so stale images don't leak into next render
+        _restore_desktop_placeholders()
 
     return output_path

@@ -165,9 +165,7 @@ CONVERSATION_HOOKS = [
 ]
 # Rotating spoken video CTAs — documentary voice, understated
 VIDEO_CTA_SPOKEN = [
-    "That's The Docket. Follow for more stories like this.",
-    "More at The Docket. Follow to keep seeing these.",
-    "The Docket. Climate stories between the headlines. Follow for more.",
+    "Follow for more stories like this at The Docket.",
 ]
 # Share-worthy closing slides for Reels (statement format — emotional/share-worthy)
 SHARE_WORTHY_CLOSERS = [
@@ -1277,6 +1275,9 @@ def _build_voiceover(hook: str, slides: list[str], cta: str) -> str:
     Combine hook, slides, and CTA into flowing voiceover narration.
     Reads naturally spoken aloud — the Observational Insider voice.
     Calm. Measured. Slightly weary.
+
+    On-screen text and voiceover are the same (single-track).
+    The LLM writes lines that work both visually and spoken.
     """
     spoken_parts = [hook.replace("\n\n", " ")]
     for slide in slides:
@@ -1357,10 +1358,14 @@ def _format_exemplars_for_prompt(
     return "\n".join(lines)
 def _generate_body_slides_llm(article: Article, hook: str) -> dict | None:
     """
-    Generate video script body slides + voiceover using Claude API.
+    Generate video script slides using Claude API.
+
+    The LLM produces *voiceover_lines* — natural spoken narration that
+    doubles as on-screen text.  This single track replaces the old
+    dual body_slides / voiceover_lines split.
+
     Returns a dict with keys:
-        body_slides: list[str]  — 5-7 on-screen text slides (≤15 words each)
-        voiceover_lines: list[str] — spoken narration per slide (adds context)
+        body_slides: list[str]  — derived from voiceover_lines
         closing_slide: str — share-worthy closing statement
         closing_voiceover: str — spoken version of closing
     Returns None if the API call fails (caller falls back to regex extraction).
@@ -1443,7 +1448,6 @@ ARTICLE TEXT:
 {source_text[:3000]}
 Generate EXACTLY this JSON structure:
 {{
-  "body_slides": [{_example_slides}],
   "voiceover_lines": [{_example_vos}],
   "closing_slide": "A heavy realization",
   "closing_voiceover": "Spoken version of the closing",
@@ -1453,8 +1457,7 @@ Generate EXACTLY this JSON structure:
   "narrative_structure": "{narrative_key}"
 }}
 RULES:
-- body_slides: {_slide_range} slides that ADVANCE the narrative beyond the hook. Max {_max_words} words each. Find the "micro-moments" — a cracked gauge, a salt-stained boot, a flickering light. Focus on nouns and verbs. Fragments are good. Silence between thoughts is good.
-- voiceover_lines: One per body slide. One sentence each, max {_max_words - 3} words. Spare. Let the image carry the weight.
+- voiceover_lines: {_slide_range} lines that ADVANCE the narrative beyond the hook. These appear on screen AND are spoken aloud — write them to read well both ways. Max {_max_words} words each. One sentence per line. Find the "micro-moments" — a cracked gauge, a salt-stained boot, a flickering light. Spare. Let the image carry the weight.
 - closing_slide: A "heavy" realization. Not a call to action, but a "cold water to the face" statement that demands a re-watch.
 - closing_voiceover: Spoken version of the closing. Can be slightly longer.
 {narrative_block}
@@ -1466,7 +1469,7 @@ Rate this article's visual potential 1-10 based on:
 - Narrative arc? +2
 - Specific scenes describable for AI image generation? +2
 IMAGE PROMPTS:
-If cinematic_score >= 6: generate "image_prompts" — one per body slide. Set "background_prompt" to "".
+If cinematic_score >= 6: generate "image_prompts" — one per voiceover line. Set "background_prompt" to "".
 If cinematic_score < 6: generate one "background_prompt" for the overall article theme. Set "image_prompts" to [].
 IMAGE PROMPT RULES:
 - Photorealistic scene, 1-2 sentences
@@ -1474,17 +1477,22 @@ IMAGE PROMPT RULES:
 - No text, logos, UI elements, or watermarks
 - Include specific visual details: colors, materials, weather, time of day, scale
 - Portrait orientation (9:16 vertical)
-- Each prompt should depict a different scene matching its body slide
+- Each prompt should depict a different scene matching its voiceover line
 {video_compliance_block}
 {exemplar_block}
 Return ONLY valid JSON. No markdown, no explanation."""
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2048,  # was 1024 — image prompts were getting truncated
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()
+        _was_truncated = response.stop_reason == "max_tokens"
+        if _was_truncated:
+            console.print(
+                "[yellow]Claude response hit max_tokens — output may be truncated[/yellow]"
+            )
         # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
@@ -1505,6 +1513,25 @@ Return ONLY valid JSON. No markdown, no explanation."""
             if result is None:
                 console.print("[yellow]Claude returned invalid JSON for video script[/yellow]")
                 return None
+        # Normalize: voiceover_lines is now the single content track.
+        # Map it to body_slides so downstream code stays consistent.
+        _vo = result.get("voiceover_lines")
+        _bs = result.get("body_slides")
+        if isinstance(_vo, list) and len(_vo) >= 3:
+            result["body_slides"] = _vo  # on-screen text = voiceover
+        elif isinstance(_bs, list) and len(_bs) >= 3:
+            # Backward compat: old-format response with body_slides
+            result["body_slides"] = _bs
+        else:
+            console.print("[yellow]Claude returned too few slides, falling back[/yellow]")
+            return None
+        # Truncation guard: if max_tokens was hit, check we got complete data
+        _n_slides = len(result["body_slides"])
+        if _was_truncated:
+            console.print(
+                f"[yellow]Truncation detected with {_n_slides} slides — "
+                f"last slide may be incomplete[/yellow]"
+            )
         # Validate structure
         if (isinstance(result.get("body_slides"), list) and
                 len(result["body_slides"]) >= 3):
@@ -1772,7 +1799,7 @@ def generate_all_video_scripts(issue: DocketIssue, config: dict) -> list[VideoSc
         # Try LLM-generated slides first, fall back to regex extraction
         llm_result = _generate_body_slides_llm(article, hook)
         if llm_result:
-            body_slides = llm_result["body_slides"]
+            body_slides = llm_result["body_slides"]  # = voiceover_lines (unified)
             closing_slide = llm_result.get("closing_slide", "")
             closing_vo = llm_result.get("closing_voiceover", closing_slide)
         else:
@@ -1790,6 +1817,7 @@ def generate_all_video_scripts(issue: DocketIssue, config: dict) -> list[VideoSc
             closing_slide = SHARE_WORTHY_CLOSERS[script_idx % len(SHARE_WORTHY_CLOSERS)]
         body_slides.append(closing_slide)
         cta = VIDEO_CTA_TEXT
+        # On-screen text = voiceover text (single track)
         voiceover = _build_voiceover(hook, body_slides, spoken_cta)
         # Extract cinematic scoring fields from LLM result
         cinematic_score = 0

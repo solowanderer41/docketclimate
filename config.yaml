@@ -50,7 +50,7 @@ platforms:
     resolution: [1080, 1920]
 
 video:
-  render_engine: "moviepy"  # "moviepy" (current) or "aftereffects" (nexrender cloud AE)
+  render_engine: "aftereffects"  # "moviepy" or "aftereffects" (nexrender + AE 2026)
   resolution: [1080, 1920]  # 9:16 vertical
   fps: 30
   background_color: "#1a1a2e"
