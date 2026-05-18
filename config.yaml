@@ -24,7 +24,7 @@ platforms:
     type: text
 
   twitter:
-    enabled: true
+    enabled: false  # deprecated 2026-03-30 — zero engagement after 79 posts, 401 auth broken
     max_chars: 280
     type: text
 
@@ -229,10 +229,14 @@ schedule:
   # Research: Twitter 8AM/12PM/5PM, Threads 7-10PM (conversation hours),
   # Reels 7-9AM + 7-9PM (scroll-in-bed hours), Bluesky any consistent time
   platform_time_slots:
-    twitter:
+    bluesky:
       - "08:00"
+      - "09:30"
       - "12:00"
+      - "12:30"
+      - "15:30"
       - "17:00"
+      - "17:30"
     threads:
       - "12:30"
       - "19:00"
@@ -240,11 +244,6 @@ schedule:
     reels:
       - "07:30"
       - "19:30"
-    bluesky:
-      - "09:30"
-      - "12:30"
-      - "15:30"
-      - "17:30"
   features_per_day: 3
   news_per_day: 4
   videos_per_week: 5

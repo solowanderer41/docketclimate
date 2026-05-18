@@ -52,6 +52,24 @@ def run_daily(config: dict, dry_run: bool = False):
     now = datetime.now(tz)
     console.print(f"[dim]Current time: {now.strftime('%Y-%m-%d %H:%M %Z')}[/dim]")
 
+    # Surface orphaned items (pending, prior-day) so silent attrition is visible.
+    # These can't be auto-posted here because date-of-week framing may make the
+    # content stale, but logging them prevents the W31-style failure where Friday
+    # items vanished without any operator-visible signal.
+    orphans = queue.get_orphaned_items(up_to=now)
+    if orphans:
+        console.print(
+            f"[red]⚠ {len(orphans)} orphaned pending items "
+            f"(date < today, will never auto-post):[/red]"
+        )
+        for item in orphans:
+            sched = item.scheduled_time or "?"
+            console.print(
+                f"  [red]·[/red] {item.id} {item.platform:8s} "
+                f"{sched}  {item.article_title[:50]}"
+            )
+        _log_orphans(orphans, queue.issue_number)
+
     # Get items due up to now
     today_items = queue.get_today_items(up_to=now)
     if not today_items:
@@ -157,7 +175,9 @@ def _process_items(
 
         # Pre-publication compliance gate (catch-up check for items
         # that bypassed schedule-time validation, e.g. old queue files)
-        if getattr(item, "compliance_status", None) is None:
+        # Video items are excluded — their captions use "Link in bio" instead
+        # of a URL, which would incorrectly fail the attribution check.
+        if getattr(item, "compliance_status", None) is None and item.content_type == "text":
             try:
                 comp_cfg = config.get("compliance", {})
                 if comp_cfg.get("enabled", False):
@@ -824,6 +844,30 @@ def _log_daily_run(posted: int, failed: int, pending: int, issue_number: int | N
         "posted": posted,
         "failed": failed,
         "pending": pending,
+    }
+    with open(log_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def _log_orphans(orphans, issue_number: int | None):
+    """Append an orphaned-items record so missed posts leave an audit trail."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = LOG_DIR / f"{datetime.now().strftime('%Y-%m-%d')}.log"
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "action": "orphaned-items",
+        "issue_number": issue_number,
+        "count": len(orphans),
+        "items": [
+            {
+                "id": i.id,
+                "platform": i.platform,
+                "date": i.date,
+                "scheduled_time": i.scheduled_time,
+                "article_title": i.article_title,
+            }
+            for i in orphans
+        ],
     }
     with open(log_file, "a") as f:
         f.write(json.dumps(entry) + "\n")

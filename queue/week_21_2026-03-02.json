@@ -311,11 +311,11 @@
       "hashtags": [],
       "scheduled_time": "2026-03-06T09:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null,
+      "posted_at": "2026-03-06T09:30:21.822230",
+      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mgfto7akhv25",
       "compliance_status": "pass",
       "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
       "compliance_original": null,
@@ -335,11 +335,11 @@
       "hashtags": [],
       "scheduled_time": "2026-03-06T08:00:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null,
+      "posted_at": "2026-03-06T09:30:22.430728",
+      "post_uri": "twitter:2029972870517104910",
       "compliance_status": "pass",
       "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
       "compliance_original": null,
@@ -359,11 +359,11 @@
       "hashtags": [],
       "scheduled_time": "2026-03-06T12:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null,
+      "posted_at": "2026-03-06T12:33:09.843760",
+      "post_uri": "18072599549446275",
       "compliance_status": "pass",
       "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
       "compliance_original": null,
@@ -793,7 +793,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_mon_011",
@@ -813,7 +817,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_mon_001",
@@ -833,7 +841,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_mon_016",
@@ -853,7 +865,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_mon_006",
@@ -873,7 +889,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_mon_021",
@@ -893,7 +913,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_mon_026",
@@ -916,7 +940,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_tue_032",
@@ -956,7 +984,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_tue_012",
@@ -976,7 +1008,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_tue_002",
@@ -996,7 +1032,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_tue_017",
@@ -1016,7 +1056,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_tue_007",
@@ -1039,7 +1083,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_tue_022",
@@ -1059,7 +1107,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_tue_027",
@@ -1079,7 +1131,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_wed_013",
@@ -1101,7 +1157,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_wed_003",
@@ -1121,7 +1181,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_wed_018",
@@ -1141,7 +1205,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_wed_008",
@@ -1161,7 +1229,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_wed_023",
@@ -1184,7 +1256,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_wed_028",
@@ -1204,7 +1280,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_thu_014",
@@ -1224,7 +1304,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_thu_004",
@@ -1244,7 +1328,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_thu_019",
@@ -1264,7 +1352,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_thu_009",
@@ -1284,7 +1376,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_thu_024",
@@ -1304,7 +1400,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_thu_029",
@@ -1324,7 +1424,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_fri_015",
@@ -1340,11 +1444,15 @@
       "hashtags": [],
       "scheduled_time": "2026-03-06T08:00:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-03-06T09:30:22.942811",
+      "post_uri": "twitter:2029972872719126886",
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_fri_005",
@@ -1360,11 +1468,15 @@
       "hashtags": [],
       "scheduled_time": "2026-03-06T09:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-03-06T09:30:25.216017",
+      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mgftod37hf2n",
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_fri_020",
@@ -1382,11 +1494,15 @@
       ],
       "scheduled_time": "2026-03-06T12:00:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-03-06T12:33:10.502626",
+      "post_uri": "twitter:2030018873735664095",
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_fri_010",
@@ -1405,11 +1521,15 @@
       ],
       "scheduled_time": "2026-03-06T12:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-03-06T12:33:12.854510",
+      "post_uri": "at://did:plc:qtq6komnjzgh3whs6kig35gv/app.bsky.feed.post/3mgg5v6mzng2o",
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_fri_025",
@@ -1425,11 +1545,15 @@
       "hashtags": [],
       "scheduled_time": "2026-03-06T12:30:00-08:00",
       "video_script": null,
-      "status": "pending",
+      "status": "posted",
       "attempts": 0,
       "last_error": null,
-      "posted_at": null,
-      "post_uri": null
+      "posted_at": "2026-03-06T12:33:23.817764",
+      "post_uri": "18397149076199342",
+      "compliance_status": "pass",
+      "compliance_detail": "\u2713 Quote ratio, \u2713 Verbatim overlap, \u2713 Attribution, \u2713 Claim density",
+      "compliance_original": null,
+      "hook_variant": null
     },
     {
       "id": "tb19_fri_030",
@@ -1449,7 +1573,11 @@
       "attempts": 0,
       "last_error": null,
       "posted_at": null,
-      "post_uri": null
+      "post_uri": null,
+      "compliance_status": null,
+      "compliance_detail": null,
+      "compliance_original": null,
+      "hook_variant": null
     }
   ]
 }

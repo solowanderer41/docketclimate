@@ -9,7 +9,7 @@ Supported platforms:
     - Bluesky: likes, reposts, replies (public API, no auth needed)
     - Twitter: likes, retweets, replies (API v2, Basic tier)
     - Threads: likes, replies, reposts (Graph API, needs threads_manage_insights)
-    - Instagram Reels: likes, comments, shares, plays (Graph API, needs instagram_manage_insights)
+    - Instagram Reels: likes, comments, saves, views, reach, avg watch time (Graph API, instagram_basic scope)
 """
 
 import json
@@ -49,6 +49,8 @@ class PostMetrics:
     reposts: int = 0
     replies: int = 0
     views: int | None = None
+    reach: int | None = None  # Reels: unique accounts reached (from /insights)
+    avg_watch_time: float | None = None  # Reels: avg watch in seconds (from ig_reels_avg_watch_time)
     engagement_score: float = 0.0
     hook_variant: int | None = None  # which hook variant (0-4) was used for A/B testing
     fetched_at_hours: int | None = None  # checkpoint: 4, 24, or 48 hours post-publish
@@ -204,14 +206,17 @@ def _fetch_reels_metrics(media_id: str) -> dict:
     """
     Fetch engagement metrics for an Instagram Reel via the Graph API.
 
-    Two-step approach for resilience:
-      1. Try full fields (like_count, comments_count, share_count, views)
-         — views requires instagram_manage_insights scope
-      2. If that 400s, retry with basic fields only (like_count, comments_count)
-         — these work without the insights scope
+    Two requests:
+      1. GET /{media_id}?fields=like_count,comments_count
+         — basic engagement, works with instagram_basic scope
+      2. GET /{media_id}/insights?metric=views,reach,saved,ig_reels_avg_watch_time
+         — Reels-specific metrics, also works with instagram_basic scope
 
-    This lets us collect engagement data before app verification completes,
-    and views appear automatically once the scope is granted.
+    Note: 'views' must be requested via the /insights endpoint, not as a
+    field on the media object. 'plays' is not a valid metric name for the
+    REELS media_product_type — use 'views' instead.
+    'saved' (saves) is mapped to 'reposts' as the highest-intent Reels
+    engagement signal; reach and avg watch time are logged for context.
     """
     try:
         access_token = os.getenv("META_INSTAGRAM_ACCESS_TOKEN") or os.getenv("META_ACCESS_TOKEN")
@@ -232,57 +237,64 @@ def _fetch_reels_metrics(media_id: str) -> dict:
 
         base_url = f"https://graph.instagram.com/v24.0/{media_id}"
 
-        # Step 1: Try full fields (including views — needs insights scope)
-        response = requests.get(
+        # Step 1: Basic engagement from the media object
+        basic_resp = requests.get(
             base_url,
             params={
-                "fields": "like_count,comments_count,share_count,views",
+                "fields": "like_count,comments_count",
                 "access_token": access_token,
             },
             timeout=10,
         )
+        if basic_resp.status_code == 400:
+            err = basic_resp.json().get("error", {}).get("message", "unknown")
+            console.print(f"[yellow]Reels basic metrics error: {err}[/yellow]")
+            return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+        basic_resp.raise_for_status()
+        basic = basic_resp.json()
 
-        # Step 2: If insights scope missing, fall back to basic fields
-        if response.status_code == 400:
-            err_data = response.json().get("error", {})
-            console.print(
-                f"[dim]  Reels insights scope pending — fetching basic metrics only[/dim]"
-            )
-            response = requests.get(
-                base_url,
-                params={
-                    "fields": "like_count,comments_count",
-                    "access_token": access_token,
-                },
-                timeout=10,
-            )
-            if response.status_code == 400:
-                # Basic fields also failed — token or media_id issue
-                err_data = response.json().get("error", {})
-                console.print(
-                    f"[yellow]Reels basic metrics error: {err_data.get('message', 'unknown')}[/yellow]"
-                )
-                return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+        # Step 2: Reels-specific insights (views, reach, saves, watch time)
+        insights_resp = requests.get(
+            f"{base_url}/insights",
+            params={
+                "metric": "views,reach,saved,ig_reels_avg_watch_time",
+                "access_token": access_token,
+            },
+            timeout=10,
+        )
+        insights: dict = {}
+        if insights_resp.status_code == 200:
+            for entry in insights_resp.json().get("data", []):
+                name = entry.get("name", "")
+                values = entry.get("values", [{}])
+                insights[name] = values[0].get("value", 0) if values else 0
+        else:
+            err = insights_resp.json().get("error", {}).get("message", "unknown")
+            console.print(f"[yellow]Reels insights error: {err}[/yellow]")
 
-        response.raise_for_status()
-        data = response.json()
+        reach = insights.get("reach")
+        avg_watch_ms = insights.get("ig_reels_avg_watch_time")
+        avg_watch_s = (avg_watch_ms / 1000) if avg_watch_ms else None
+        avg_watch_label = f"{avg_watch_s:.1f}s" if avg_watch_s is not None else "?s"
 
         result = {
-            "likes": data.get("like_count", 0),
-            "reposts": data.get("share_count", 0),
-            "replies": data.get("comments_count", 0),
-            "views": data.get("views", None),
+            "likes": basic.get("like_count", 0),
+            "reposts": insights.get("saved", 0),  # saves = highest-intent Reels signal
+            "replies": basic.get("comments_count", 0),
+            "views": insights.get("views") or None,
+            "reach": reach if reach is not None else None,
+            "avg_watch_time": avg_watch_s,
         }
-        if any(v for v in result.values() if v):
-            console.print(
-                f"[dim]  Reels: {result['likes']}L {result['views'] or '?'}V "
-                f"{result['replies']}C {result['reposts']}S[/dim]"
-            )
+        console.print(
+            f"[dim]  Reels: {result['likes']}L {result['views'] or '?'}V "
+            f"{result['replies']}C {result['reposts']}S "
+            f"| reach {reach or '?'} | avg watch {avg_watch_label}[/dim]"
+        )
         return result
 
     except Exception as e:
         console.print(f"[yellow]Reels metrics failed for {media_id}: {e}[/yellow]")
-        return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+        return {"likes": 0, "reposts": 0, "replies": 0, "views": None, "reach": None, "avg_watch_time": None}
 
 
 # Platform fetcher dispatch
@@ -363,6 +375,8 @@ def fetch_metrics(queue_path: Path, delay_hours: int = 48) -> list[PostMetrics]:
             reposts=raw["reposts"],
             replies=raw["replies"],
             views=raw.get("views"),
+            reach=raw.get("reach"),
+            avg_watch_time=raw.get("avg_watch_time"),
             hook_variant=getattr(item, "hook_variant", None),
         )
         metrics.compute_score()
@@ -377,38 +391,64 @@ def fetch_metrics(queue_path: Path, delay_hours: int = 48) -> list[PostMetrics]:
     return results
 
 
+_ENGAGEMENT_FIELDS = ("likes", "reposts", "replies", "views", "reach", "avg_watch_time")
+
+
+def _engagement_changed(old: PostMetrics, new: PostMetrics) -> bool:
+    """True if any engagement value differs between two records for the same key."""
+    for field in _ENGAGEMENT_FIELDS:
+        if getattr(old, field) != getattr(new, field):
+            return True
+    return False
+
+
 def save_metrics(metrics: list[PostMetrics], path: Path = DEFAULT_METRICS_PATH):
     """
-    Append metrics to the cumulative JSON file.
+    Upsert metrics into the cumulative JSON file.
 
-    Does not overwrite existing data — each collection run appends.
-    Deduplicates by (queue_item_id, platform, fetched_at_hours) to
-    support multi-point velocity collection (4h, 24h, 48h checkpoints).
+    Keyed by (queue_item_id, platform, fetched_at_hours) — this supports
+    multi-point velocity collection (4h/24h/48h checkpoints stored separately).
+    For checkpoint=None (one-shot collection), the latest fetch replaces the
+    existing record when engagement has changed, so a 0→1 like update is
+    persisted instead of being silently dropped.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
     existing = load_metrics(path)
-    existing_keys = {
-        (m.queue_item_id, m.platform, m.fetched_at_hours)
+    existing_by_key = {
+        (m.queue_item_id, m.platform, m.fetched_at_hours): m
         for m in existing
     }
 
-    new_metrics = [
-        m for m in metrics
-        if (m.queue_item_id, m.platform, m.fetched_at_hours) not in existing_keys
-    ]
+    added = 0
+    updated = 0
+    unchanged = 0
+    for m in metrics:
+        key = (m.queue_item_id, m.platform, m.fetched_at_hours)
+        prior = existing_by_key.get(key)
+        if prior is None:
+            existing_by_key[key] = m
+            added += 1
+        elif _engagement_changed(prior, m):
+            existing_by_key[key] = m
+            updated += 1
+        else:
+            unchanged += 1
 
-    if not new_metrics:
-        console.print("[dim]No new metrics to save (all already collected).[/dim]")
+    if added == 0 and updated == 0:
+        console.print(
+            f"[dim]No new or changed metrics to save ({unchanged} unchanged).[/dim]"
+        )
         return
 
-    all_metrics = existing + new_metrics
+    all_metrics = list(existing_by_key.values())
     with open(path, "w") as f:
         json.dump([asdict(m) for m in all_metrics], f, indent=2)
 
     console.print(
-        f"[green]Saved {len(new_metrics)} new metrics "
-        f"({len(all_metrics)} total) to {path}[/green]"
+        f"[green]Saved metrics to {path}: "
+        f"{added} new, {updated} updated, {unchanged} unchanged "
+        f"({len(all_metrics)} total)[/green]"
     )
 
 
@@ -475,6 +515,8 @@ def fetch_metrics_at_interval(
             reposts=raw["reposts"],
             replies=raw["replies"],
             views=raw.get("views"),
+            reach=raw.get("reach"),
+            avg_watch_time=raw.get("avg_watch_time"),
             hook_variant=getattr(item, "hook_variant", None),
             fetched_at_hours=checkpoint_hours,
         )

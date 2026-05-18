@@ -8,48 +8,53 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/gregorybennett/docket-social/.venv/bin/python</string>
+        <string>/Users/gregorybennett/Claude Work/docketclimate/.venv/bin/python</string>
         <string>-m</string>
         <string>src.main</string>
         <string>post-today</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/gregorybennett/docket-social</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate</string>
 
     <key>StartCalendarInterval</key>
     <array>
-        <!-- Monday: 09:30, 12:30, 15:30, 17:30 -->
+        <!-- Monday: 09:30, 12:30, 15:30, 17:30, 19:00 -->
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-        <!-- Tuesday: 09:30, 12:30, 15:30, 17:30 -->
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <!-- Tuesday: 09:30, 12:30, 15:30, 17:30, 19:00 -->
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-        <!-- Wednesday: 09:30, 12:30, 15:30, 17:30 -->
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <!-- Wednesday: 09:30, 12:30, 15:30, 17:30, 19:00 -->
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-        <!-- Thursday: 09:30, 12:30, 15:30, 17:30 -->
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <!-- Thursday: 09:30, 12:30, 15:30, 17:30, 19:00 -->
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-        <!-- Friday: 09:30, 12:30, 15:30, 17:30 -->
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <!-- Friday: 09:30, 12:30, 15:30, 17:30, 19:00 -->
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
-    <string>/Users/gregorybennett/docket-social/logs/launchd.stdout.log</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate/logs/launchd.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/gregorybennett/docket-social/logs/launchd.stderr.log</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate/logs/launchd.stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

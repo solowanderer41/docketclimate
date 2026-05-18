@@ -99,10 +99,17 @@ class WeekQueue:
     def get_today_items(self, up_to: datetime | None = None) -> list[QueueItem]:
         """Filter to pending items scheduled for today, due at or before `up_to`.
 
-        If up_to is None, returns all pending items for today (backward compat).
+        "Today" is derived from `up_to` when it's provided (tz-aware), otherwise
+        from the system clock. Using `up_to.date()` prevents the bug where the
+        system timezone disagrees with the queue's scheduling timezone — without
+        this, an item scheduled for Friday in PT could be filtered out by a
+        runner whose system clock has already rolled to Saturday UTC.
         Items without a scheduled_time are always considered due.
         """
-        today = datetime.now().strftime("%Y-%m-%d")
+        if up_to is not None:
+            today = up_to.strftime("%Y-%m-%d")
+        else:
+            today = datetime.now().strftime("%Y-%m-%d")
         today_pending = [
             i for i in self.items if i.date == today and i.status == "pending"
         ]
@@ -121,7 +128,10 @@ class WeekQueue:
 
     def get_retryable(self, max_retries: int = 3, up_to: datetime | None = None) -> list[QueueItem]:
         """Get failed items that haven't exceeded retry limit and are due."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        if up_to is not None:
+            today = up_to.strftime("%Y-%m-%d")
+        else:
+            today = datetime.now().strftime("%Y-%m-%d")
         candidates = [
             i for i in self.items
             if i.date == today and i.status == "failed" and i.attempts < max_retries
@@ -138,6 +148,20 @@ class WeekQueue:
                 if item_time <= up_to:
                     due.append(item)
         return due
+
+    def get_orphaned_items(self, up_to: datetime) -> list[QueueItem]:
+        """Return pending items whose scheduled date is before today.
+
+        These items will never be picked up by `get_today_items` again because
+        of the `i.date == today` filter. Used by the daily runner to surface
+        silent attrition (e.g. items missed because launchd didn't fire that day,
+        or because the item was scheduled past the final launchd slot).
+        """
+        today = up_to.strftime("%Y-%m-%d")
+        return [
+            i for i in self.items
+            if i.status == "pending" and i.date and i.date < today
+        ]
 
     def mark_posted(self, item_id: str, post_uri: str = ""):
         """Mark a queue item as successfully posted."""
