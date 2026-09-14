@@ -10,24 +10,24 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>/Users/gregorybennett/docket-social/.venv/bin/python -m src.main scrape &amp;&amp; /Users/gregorybennett/docket-social/.venv/bin/python -m src.main schedule --auto</string>
+        <string>.venv/bin/python -m src.main scrape &amp;&amp; .venv/bin/python -m src.main schedule --auto</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/gregorybennett/docket-social</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate</string>
 
-    <!-- Monday at 12:00 PM -->
+    <!-- Monday at 6:00 AM (before the daily runner's first 09:30 slot) -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key><integer>1</integer>
-        <key>Hour</key><integer>12</integer>
+        <key>Hour</key><integer>6</integer>
         <key>Minute</key><integer>0</integer>
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/gregorybennett/docket-social/logs/launchd.weekly.stdout.log</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate/logs/launchd.weekly.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/gregorybennett/docket-social/logs/launchd.weekly.stderr.log</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate/logs/launchd.weekly.stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

@@ -6,7 +6,14 @@ into a JSON queue file. Each day gets a balanced mix of
 feature articles and news cards.
 """
 
+import errno
+import fcntl
 import json
+import os
+import re
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,6 +36,145 @@ console = Console()
 WEEKDAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday"]
 ALL_DAY_NAMES = ["sunday"] + WEEKDAY_NAMES  # includes pre-issue Sunday
 WEEKDAY_SHORT = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4}
+
+QUEUE_LOCK_NAME = ".queue.lock"
+
+# Depth of queue locks held by THIS process, keyed by resolved lock path.
+# flock is held per open-file-description, so a second acquisition in the same
+# process would block against its own first one. Callers nest without knowing
+# it (run_daily locks internally, and a CLI command may also be decorated), so
+# track depth and only touch the kernel lock at depth 0.
+_held_locks: dict[str, int] = {}
+_held_locks_guard = threading.Lock()
+
+
+class QueueLockBusy(RuntimeError):
+    """Raised when another process already holds the queue lock."""
+
+
+@contextmanager
+def queue_lock(queue_dir: Path, timeout: float = 0.0):
+    """Hold an exclusive advisory lock on the queue for a whole run.
+
+    The queue file is read-modify-write: a run loads every item into memory,
+    works for minutes (rendering video, uploading, and sleeping out the retry
+    delay), then writes all items back. Two overlapping runs therefore both
+    see an item as ``pending`` and both post it, and whichever finishes last
+    overwrites the other's results — silently resurrecting posted items or
+    discarding them.
+
+    Making individual writes atomic does not help, because the window is
+    between the read and the write, not inside the write. The only fix that
+    closes it is serialising the runs themselves, which is what this does.
+
+    Uses ``fcntl.flock`` on a lock file rather than a PID file: the kernel
+    releases an flock when the holding process exits, so a crashed or killed
+    run cannot leave a stale lock that blocks every subsequent run.
+
+    Args:
+        queue_dir: Directory holding the queue files; the lock lives here.
+        timeout: Seconds to wait for the lock. The default of 0 fails
+            immediately, which is what a scheduled run wants — stacking up
+            blocked runs behind a slow one is worse than skipping this slot,
+            since the next slot is minutes away. Interactive callers can pass
+            a few seconds to ride out a run that is finishing up.
+
+    Raises:
+        QueueLockBusy: If the lock is held and `timeout` expires.
+    """
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = queue_dir / QUEUE_LOCK_NAME
+    key = os.path.realpath(lock_path)
+
+    # Already held further up this call stack: nest instead of deadlocking
+    # against ourselves.
+    with _held_locks_guard:
+        nested = _held_locks.get(key, 0) > 0
+        if nested:
+            _held_locks[key] += 1
+
+    if nested:
+        try:
+            yield lock_path
+        finally:
+            with _held_locks_guard:
+                _held_locks[key] -= 1
+        return
+
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    deadline = time.monotonic() + timeout
+    acquired = False
+
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError as e:
+                # Only EAGAIN/EWOULDBLOCK (and EACCES on some platforms) mean
+                # "someone else holds it". Anything else is a real fault —
+                # ENOLCK/EOPNOTSUPP from a filesystem without advisory locking,
+                # EBADF from a bad descriptor. Reporting those as contention
+                # would silently stop all posting while telling the operator to
+                # look for a second process that does not exist.
+                if e.errno not in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES):
+                    raise
+                if time.monotonic() >= deadline:
+                    # State the fact only. Each caller adds its own
+                    # consequence — a scheduled run skips the slot, an
+                    # interactive command tells the operator to retry.
+                    raise QueueLockBusy(
+                        f"Queue is locked by another run "
+                        f"({_read_lock_holder(lock_path)})."
+                    )
+                time.sleep(0.25)
+
+        with _held_locks_guard:
+            _held_locks[key] = 1
+
+        # Record the holder so a blocked run can say who it is waiting on.
+        try:
+            os.ftruncate(fd, 0)
+            os.write(
+                fd,
+                f"pid={os.getpid()} started={datetime.now().isoformat()}\n".encode(),
+            )
+            os.fsync(fd)
+        except OSError:
+            pass  # Diagnostics only — never fail a run over this.
+
+        yield lock_path
+
+    finally:
+        # Nested holders have already decremented back to 1 by now; if
+        # acquisition failed the key was never registered and this is a no-op.
+        with _held_locks_guard:
+            _held_locks.pop(key, None)
+        try:
+            # Only unlock what we actually took. Unlocking on the failed-
+            # acquisition path is not merely redundant: if that call raises it
+            # replaces the in-flight QueueLockBusy, so the caller sees a bare
+            # OSError instead of the contention it needs to handle.
+            # Errors here are swallowed because closing the fd releases the
+            # flock regardless, and a failed unlock must never mask the real
+            # exception leaving this block.
+            if acquired:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+        finally:
+            os.close(fd)
+
+
+def _read_lock_holder(lock_path: Path) -> str:
+    """Best-effort description of the process holding the lock."""
+    try:
+        text = lock_path.read_text().strip()
+        return text or "unknown holder"
+    except OSError:
+        return "unknown holder"
 
 
 @dataclass
@@ -77,9 +223,30 @@ class WeekQueue:
         }
 
     def save(self, path: Path):
+        """Write the queue to disk atomically.
+
+        Serialises to a temporary file in the same directory and then
+        ``os.replace``s it into place, which is atomic on POSIX. A crash or
+        kill partway through a write therefore leaves the previous queue
+        intact rather than a truncated file — the queue is the only record of
+        what has already been posted, so a corrupt one risks double-posting
+        every item in the week.
+
+        Note this makes each individual write atomic; it does not make
+        read-modify-write cycles safe against concurrent runs. Callers that
+        mutate the queue must hold :func:`queue_lock`.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
+        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+        try:
+            with open(tmp, "w") as f:
+                json.dump(self.to_dict(), f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
         console.print(f"[green]Queue saved to {path}[/green]")
 
     @classmethod
@@ -99,10 +266,17 @@ class WeekQueue:
     def get_today_items(self, up_to: datetime | None = None) -> list[QueueItem]:
         """Filter to pending items scheduled for today, due at or before `up_to`.
 
-        If up_to is None, returns all pending items for today (backward compat).
+        "Today" is derived from `up_to` when it's provided (tz-aware), otherwise
+        from the system clock. Using `up_to.date()` prevents the bug where the
+        system timezone disagrees with the queue's scheduling timezone — without
+        this, an item scheduled for Friday in PT could be filtered out by a
+        runner whose system clock has already rolled to Saturday UTC.
         Items without a scheduled_time are always considered due.
         """
-        today = datetime.now().strftime("%Y-%m-%d")
+        if up_to is not None:
+            today = up_to.strftime("%Y-%m-%d")
+        else:
+            today = datetime.now().strftime("%Y-%m-%d")
         today_pending = [
             i for i in self.items if i.date == today and i.status == "pending"
         ]
@@ -121,7 +295,10 @@ class WeekQueue:
 
     def get_retryable(self, max_retries: int = 3, up_to: datetime | None = None) -> list[QueueItem]:
         """Get failed items that haven't exceeded retry limit and are due."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        if up_to is not None:
+            today = up_to.strftime("%Y-%m-%d")
+        else:
+            today = datetime.now().strftime("%Y-%m-%d")
         candidates = [
             i for i in self.items
             if i.date == today and i.status == "failed" and i.attempts < max_retries
@@ -138,6 +315,20 @@ class WeekQueue:
                 if item_time <= up_to:
                     due.append(item)
         return due
+
+    def get_orphaned_items(self, up_to: datetime) -> list[QueueItem]:
+        """Return pending items whose scheduled date is before today.
+
+        These items will never be picked up by `get_today_items` again because
+        of the `i.date == today` filter. Used by the daily runner to surface
+        silent attrition (e.g. items missed because launchd didn't fire that day,
+        or because the item was scheduled past the final launchd slot).
+        """
+        today = up_to.strftime("%Y-%m-%d")
+        return [
+            i for i in self.items
+            if i.status == "pending" and i.date and i.date < today
+        ]
 
     def mark_posted(self, item_id: str, post_uri: str = ""):
         """Mark a queue item as successfully posted."""
@@ -724,9 +915,39 @@ def print_queue_status(queue: WeekQueue):
         )
 
 
+def _queue_sort_key(path: Path) -> tuple:
+    """Order queue files by the week they cover, not by filesystem mtime.
+
+    Reads ``week_start`` from the file, falling back to the ISO date in the
+    filename (``week_48_2026-09-14.json``), and only then to mtime.
+    """
+    try:
+        with open(path) as f:
+            week_start = json.load(f).get("week_start") or ""
+        if week_start:
+            return (2, week_start, path.stat().st_mtime)
+    except (OSError, json.JSONDecodeError, AttributeError):
+        pass
+
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", path.name)
+    if m:
+        return (1, m.group(1), path.stat().st_mtime)
+
+    return (0, "", path.stat().st_mtime)
+
+
 def find_active_queue(queue_dir: Path) -> Path | None:
-    """Find the most recent queue JSON file."""
+    """Find the queue file covering the most recent week.
+
+    Selection is by the queue's own ``week_start``, NOT by file mtime.
+    mtime is not a property of the content: any git operation that writes a
+    tracked queue file — checkout, rebase, clone, stash pop — resets it. On
+    2026-09-14 a rebase touched a dozen archived queue files and this
+    function began returning a four-month-old May queue, which would have
+    silently posted nothing on the next scheduled run because no item in it
+    was dated today.
+    """
     if not queue_dir.exists():
         return None
-    files = sorted(queue_dir.glob("week_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted(queue_dir.glob("week_*.json"), key=_queue_sort_key, reverse=True)
     return files[0] if files else None

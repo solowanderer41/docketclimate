@@ -40,6 +40,7 @@ Usage:
     python -m src.main update-weights --dry  # Preview weight changes
 """
 
+import functools
 import sys
 import json
 import yaml
@@ -65,6 +66,42 @@ LOG_DIR = PROJECT_ROOT / "logs"
 def _load_config() -> dict:
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
+
+
+def with_queue_lock(timeout: float = 10.0):
+    """Hold the queue lock for the duration of a CLI command.
+
+    Any command that mutates the active queue needs this. The scheduled
+    runner takes the same lock, so without it an interactive command can
+    interleave with a run that is midway through its read-modify-write cycle
+    and silently undo it — or, for commands that publish, post an item the
+    run is already posting.
+
+    Applied below the click option decorators so click sees the wrapper.
+
+    Args:
+        timeout: Seconds to wait before giving up. Interactive callers can
+            afford a short wait, unlike scheduled runs which skip instead.
+    """
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            from src.scheduler import queue_lock, QueueLockBusy
+
+            try:
+                with queue_lock(QUEUE_DIR, timeout=timeout):
+                    return fn(*args, **kwargs)
+            except QueueLockBusy as e:
+                console.print(f"[yellow]{e}[/yellow]")
+                console.print(
+                    "[dim]A scheduled run holds the queue. Runs can last "
+                    "15+ minutes when retrying, so try again shortly.[/dim]"
+                )
+                raise SystemExit(1)
+
+        return wrapper
+
+    return decorator
 
 
 def _get_latest_issue_path() -> Path:
@@ -317,10 +354,18 @@ def schedule(auto):
     from src.scheduler import generate_week_schedule, print_queue_status
     queue = generate_week_schedule(curation, config)
 
-    # Save queue
+    # Save queue.
+    # Deliberately NOT decorated with @with_queue_lock: curation above blocks
+    # on human input for an unbounded time, and holding the queue lock across
+    # it would make every scheduled post slot in that window skip. This command
+    # writes a *new* week file rather than mutating the active queue, so the
+    # only part needing exclusion is the write.
     QUEUE_DIR.mkdir(parents=True, exist_ok=True)
     queue_path = QUEUE_DIR / f"week_{issue.issue_number or 'latest'}_{queue.week_start}.json"
-    queue.save(queue_path)
+    from src.scheduler import queue_lock
+
+    with queue_lock(QUEUE_DIR, timeout=30.0):
+        queue.save(queue_path)
 
     # Show schedule
     print_queue_status(queue)
@@ -770,9 +815,16 @@ def review_week(queue):
         likes = m.likes if m else 0
         reposts = m.reposts if m else 0
         replies = m.replies if m else 0
+        saves = m.saves if m else 0
+        shares = m.shares if m else 0
 
         type_icon = "🎬" if item.content_type == "video" else "📝"
-        stats = f"L:{likes} R:{reposts} C:{replies} → [bold]{score:.0f}[/bold]"
+        # Saves/shares are Reels-only and were previously folded into
+        # `reposts`; show them explicitly so they stay visible here.
+        stats = f"L:{likes} R:{reposts} C:{replies}"
+        if saves or shares or item.content_type == "video":
+            stats += f" S:{saves} Sh:{shares}"
+        stats += f" → [bold]{score:.0f}[/bold]"
 
         console.print(f"[bold cyan]#{idx}[/bold cyan] {type_icon} [{item.platform}] "
                       f"[bold]{item.article_title}[/bold]")
@@ -1020,6 +1072,7 @@ def token_status():
 @click.option("--dry", is_flag=True, help="Dry run — show what would happen without deleting or posting")
 @click.option("--keep-old", is_flag=True, help="Skip deleting the old Reel (just regenerate and post)")
 @click.option("--ae", is_flag=True, help="Force After Effects rendering (override config)")
+@with_queue_lock()
 def repost_reel(item_id, dry, keep_old, ae):
     """Delete an old Reel and re-publish with the current video pipeline.
 
@@ -1780,6 +1833,7 @@ def seed_exemplars(top_n, section):
 @cli.command(name="compliance-check")
 @click.option("--fix", is_flag=True, help="Apply auto-fixes and save queue")
 @click.option("--item", "item_id", default=None, help="Check a specific queue item by ID")
+@with_queue_lock()
 def compliance_check_cmd(fix, item_id):
     """Run publishing law compliance checks on the active queue.
 

@@ -8,14 +8,14 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/gregorybennett/docket-social/.venv/bin/python</string>
+        <string>/Users/gregorybennett/Claude Work/docketclimate/.venv/bin/python</string>
         <string>-m</string>
         <string>src.main</string>
         <string>weekly-report</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/gregorybennett/docket-social</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate</string>
 
     <!-- Friday at 6:00 PM -->
     <key>StartCalendarInterval</key>
@@ -26,9 +26,9 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/gregorybennett/docket-social/logs/launchd.report.stdout.log</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate/logs/launchd.report.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/gregorybennett/docket-social/logs/launchd.report.stderr.log</string>
+    <string>/Users/gregorybennett/Claude Work/docketclimate/logs/launchd.report.stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

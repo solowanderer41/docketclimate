@@ -1,4 +1,6 @@
 .env
+# timestamped .env backups — full copies of every secret
+.env.bak*
 __pycache__/
 *.pyc
 output/
@@ -9,4 +11,7 @@ logs/
 analytics/
 data/
 .DS_Store
+# queue run lock, and temp files from interrupted atomic saves
+queue/.queue.lock
+queue/*.tmp.*
 # test_*.py  — tests now tracked in tests/ directory

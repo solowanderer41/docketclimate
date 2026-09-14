@@ -107,6 +107,17 @@ REVISION DISCIPLINE
 - Don't change the story or thesis just to make it punchier. The article's actual argument is the constraint.
 - If you change the political shot, it must still name the room with one specific image, not become a second metaphor.
 
+OPERATOR FEEDBACK OVERRIDE
+If the user message contains a section labeled "OPERATOR FEEDBACK", that feedback is from the editor (Greg) reviewing the actual generated stills against this storyboard. It supersedes your own critique judgment for the dimensions it addresses.
+
+When operator feedback is present:
+- Verdict MUST be "revised". You cannot approve a storyboard the operator has flagged.
+- Address EVERY point the operator raised. If they said "shots 4-6 are corny," you must produce non-corny replacements with rationale tied to the specific feedback. If they said "the political shot is just an empty room," you must rewrite that shot to actually accuse — name a specific document, sign, or institutional artifact that carries editorial weight.
+- The operator's feedback is grounded in seeing the actual rendered images. Trust it. Do not argue back in your scorecard notes — note which dimension each piece of feedback affected, then revise.
+- Scorecard scores should reflect the v1 storyboard's weaknesses as surfaced by the operator. If they flagged five of seven dimensions, five scores should be 2-3, not 4-5.
+- The summary should explicitly mention the operator's feedback ("Per operator notes: added two Miami-specific micro-shots up front; replaced the mercury/meter metaphor chain with [X]; changed the echo pair from laundry to [Y]; rewrote the political shot to [Z]; rebuilt the closing image around [W].")
+- New shot count may exceed the original by 1-3 if the operator requests added beats (e.g. "we need more shots establishing place"). The structural rules (7-10 shot range) still apply — if the operator's notes require more, stretch to 10 maximum. Beyond that, tighten elsewhere.
+
 OUTPUT
 Return one JSON object. No prose outside the JSON. No code fences.
 
@@ -135,18 +146,32 @@ def critique_and_revise(
     article_body: str,
     levers: LeverConfig,
     *,
+    editorial_feedback: Optional[str] = None,
     model: str = "claude-opus-4-7",
     client: Optional[Anthropic] = None,
 ) -> dict:
     """Run the critic. Returns the parsed JSON response including verdict,
-    scorecard, weaknesses, and revised_storyboard."""
+    scorecard, weaknesses, and revised_storyboard.
+
+    If editorial_feedback is provided, the critic is forced to revise (not
+    approve), and must explicitly address each piece of operator feedback.
+    """
     client = client or Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     system = CRITIC_SYSTEM_PROMPT.replace("{LEVERS_BLOCK}", levers.describe())
 
+    feedback_block = ""
+    if editorial_feedback and editorial_feedback.strip():
+        feedback_block = (
+            "\n\nOPERATOR FEEDBACK (the editor reviewed actual generated stills "
+            "against this storyboard and flagged the following). Address every point:\n\n"
+            f"{editorial_feedback.strip()}\n"
+        )
+
     user_prompt = (
         f"ARTICLE BODY:\n{article_body}\n\n"
-        f"STORYBOARD V1:\n{json.dumps(storyboard, indent=2)}\n\n"
+        f"STORYBOARD V1:\n{json.dumps(storyboard, indent=2)}"
+        f"{feedback_block}\n\n"
         "Critique and revise. Return one JSON object only, no prose outside, no code fences."
     )
 
@@ -231,6 +256,7 @@ def run(
     preset: str,
     overrides: str,
     full_critique: bool,
+    editorial_feedback_path: Optional[Path],
     model: str,
 ) -> int:
     if not storyboard_path.exists():
@@ -244,12 +270,26 @@ def run(
     article_body = article_body_path.read_text()
     levers = build_config(preset, overrides)
 
+    editorial_feedback = None
+    if editorial_feedback_path:
+        if not editorial_feedback_path.exists():
+            print(f"Editorial feedback file not found: {editorial_feedback_path}", file=sys.stderr)
+            return 1
+        editorial_feedback = editorial_feedback_path.read_text()
+        print(f"Loaded editorial feedback ({len(editorial_feedback)} chars) from "
+              f"{editorial_feedback_path.name}", file=sys.stderr)
+
     print(f"Running critic with preset '{preset}'"
           + (f" + overrides '{overrides}'" if overrides else "")
+          + (" + operator feedback" if editorial_feedback else "")
           + f" against {storyboard_path.name}...", file=sys.stderr)
 
     try:
-        critique = critique_and_revise(storyboard, article_body, levers, model=model)
+        critique = critique_and_revise(
+            storyboard, article_body, levers,
+            editorial_feedback=editorial_feedback,
+            model=model,
+        )
     except json.JSONDecodeError as e:
         print(f"Critic returned malformed JSON: {e}", file=sys.stderr)
         return 2
@@ -329,6 +369,10 @@ def main():
                              "'vo_word_target=40,pace=cut_driven'")
     parser.add_argument("--full-critique", action="store_true",
                         help="Also write a <stem>_critique.md with the full scorecard")
+    parser.add_argument("--editorial-feedback", type=Path, default=None,
+                        help="Path to a text file with operator notes (e.g. 'shots 4-6 are corny, "
+                             "the political shot is just an empty room'). When provided, forces a "
+                             "revision and instructs the critic to address every point.")
     parser.add_argument("--model", default="claude-opus-4-7",
                         help="Model to use (default: claude-opus-4-7)")
     args = parser.parse_args()
@@ -339,6 +383,7 @@ def main():
         args.preset,
         args.levers,
         args.full_critique,
+        args.editorial_feedback,
         args.model,
     ))
 

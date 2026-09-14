@@ -16,7 +16,9 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 from rich.console import Console
 
-from src.scheduler import WeekQueue, QueueItem, find_active_queue
+from src.scheduler import (
+    WeekQueue, QueueItem, find_active_queue, queue_lock, QueueLockBusy,
+)
 
 console = Console()
 
@@ -33,7 +35,25 @@ def run_daily(config: dict, dry_run: bool = False):
     3. Post each item to its platform
     4. Update queue file with results
     5. Retry failed items
+
+    Holds the queue lock for the whole run. A dry run takes it too: it does
+    not write, but reporting what "would" post while another run is actively
+    posting produces a snapshot that is wrong the moment it is printed.
     """
+    try:
+        with queue_lock(QUEUE_DIR):
+            _run_daily_locked(config, dry_run)
+    except QueueLockBusy as e:
+        # Not an error. The overlapping run is doing this slot's work; a
+        # second one would double-post. Exit quietly so launchd sees success.
+        console.print(
+            f"[yellow]{e} Skipping this slot to avoid double-posting.[/yellow]"
+        )
+        _log_skipped_run(str(e))
+
+
+def _run_daily_locked(config: dict, dry_run: bool = False):
+    """Body of the daily run. Assumes the queue lock is held."""
     queue_path = find_active_queue(QUEUE_DIR)
     if not queue_path:
         console.print("[yellow]No active queue found. Run 'schedule' first.[/yellow]")
@@ -51,6 +71,24 @@ def run_daily(config: dict, dry_run: bool = False):
     tz = ZoneInfo(tz_name)
     now = datetime.now(tz)
     console.print(f"[dim]Current time: {now.strftime('%Y-%m-%d %H:%M %Z')}[/dim]")
+
+    # Surface orphaned items (pending, prior-day) so silent attrition is visible.
+    # These can't be auto-posted here because date-of-week framing may make the
+    # content stale, but logging them prevents the W31-style failure where Friday
+    # items vanished without any operator-visible signal.
+    orphans = queue.get_orphaned_items(up_to=now)
+    if orphans:
+        console.print(
+            f"[red]⚠ {len(orphans)} orphaned pending items "
+            f"(date < today, will never auto-post):[/red]"
+        )
+        for item in orphans:
+            sched = item.scheduled_time or "?"
+            console.print(
+                f"  [red]·[/red] {item.id} {item.platform:8s} "
+                f"{sched}  {item.article_title[:50]}"
+            )
+        _log_orphans(orphans, queue.issue_number)
 
     # Get items due up to now
     today_items = queue.get_today_items(up_to=now)
@@ -157,7 +195,9 @@ def _process_items(
 
         # Pre-publication compliance gate (catch-up check for items
         # that bypassed schedule-time validation, e.g. old queue files)
-        if getattr(item, "compliance_status", None) is None:
+        # Video items are excluded — their captions use "Link in bio" instead
+        # of a URL, which would incorrectly fail the attribution check.
+        if getattr(item, "compliance_status", None) is None and item.content_type == "text":
             try:
                 comp_cfg = config.get("compliance", {})
                 if comp_cfg.get("enabled", False):
@@ -305,6 +345,54 @@ def _post_item(item: QueueItem, config: dict) -> tuple[bool, str]:
 
     except Exception as e:
         return False, str(e)
+
+
+# Voiceover loss is a system fault, not a per-post one: once the credential is
+# dead every Reel fails for the same reason. Alert once per process (= once per
+# scheduled run) so a single broken key cannot emit an alert per item per
+# retry pass across five slots a day. The daily summary still reports each
+# failed item, and the watchdog's "Voiceover key" check covers the standing
+# condition independently.
+_voiceover_alert_sent = False
+
+
+def _alert_voiceover_failure(item: QueueItem, detail: str, config: dict) -> None:
+    """Fire a health alert, at most once per run, for lost voiceover.
+
+    The daily summary already reports failed items, but it fires once at the
+    end of a run and lumps every failure together. Voiceover loss affects every
+    subsequent Reel until it is fixed, so it gets its own immediate alert —
+    but only the first one, since repeats carry no new information and alert
+    floods are what train an operator to ignore the channel.
+
+    Never raises: notification problems must not compound a render failure.
+    """
+    global _voiceover_alert_sent
+    if _voiceover_alert_sent:
+        console.print(
+            "    [dim]Voiceover alert already sent this run — not repeating.[/dim]"
+        )
+        return
+    _voiceover_alert_sent = True
+
+    try:
+        from src.notifier import notify_health_alert
+
+        notify_health_alert(
+            [
+                {
+                    "name": "Voiceover generation",
+                    "status": "fail",
+                    "detail": (
+                        f"{item.id} ({item.article_title[:40]}) aborted — {detail}. "
+                        f"Reels will keep failing until this is fixed."
+                    ),
+                }
+            ],
+            config=config,
+        )
+    except Exception as e:
+        console.print(f"    [yellow]Could not send voiceover alert: {e}[/yellow]")
 
 
 def _post_video_item(item: QueueItem, config: dict) -> tuple[bool, str]:
@@ -552,12 +640,15 @@ def _post_video_item(item: QueueItem, config: dict) -> tuple[bool, str]:
         audio_dir = tmp_path / "audio"
         video_path = tmp_path / f"{item.id}.mp4"
 
-        # Step 1: Generate per-slide voiceover (graceful fallback to silent)
+        # Step 1: Generate voiceover.
+        # Total failure aborts the item — a silent Reel that reports success
+        # is invisible until someone watches it (9 shipped that way in Aug
+        # 2026 before anyone noticed). Partial failure still degrades quietly.
         voiceover_paths = None
         use_per_slide = voiceover_config.get("per_slide", True)
 
-        if use_per_slide:
-            try:
+        try:
+            if use_per_slide:
                 console.print(
                     f"    [dim]Generating per-slide voiceover "
                     f"({len(slide_voiceover_texts)} segments)...[/dim]"
@@ -565,15 +656,8 @@ def _post_video_item(item: QueueItem, config: dict) -> tuple[bool, str]:
                 voiceover_paths = generate_voiceover_per_slide(
                     slide_voiceover_texts, audio_dir, slide_labels,
                 )
-            except Exception as e:
-                console.print(
-                    f"    [yellow]Per-slide voiceover failed ({e}), "
-                    f"continuing with silent video[/yellow]"
-                )
-                voiceover_paths = None
-        else:
-            # Legacy single-file mode
-            try:
+            else:
+                # Legacy single-file mode
                 audio_path = tmp_path / "voiceover.mp3"
                 voiceover_text = " ".join(slide_voiceover_texts)
                 console.print(
@@ -582,12 +666,15 @@ def _post_video_item(item: QueueItem, config: dict) -> tuple[bool, str]:
                 )
                 generate_voiceover(voiceover_text, audio_path)
                 voiceover_paths = audio_path
-            except Exception as e:
-                console.print(
-                    f"    [yellow]Voiceover failed ({e}), "
-                    f"continuing with silent video[/yellow]"
-                )
-                voiceover_paths = None
+        except Exception as e:
+            from src.video.voiceover import _concise_error
+
+            detail = _concise_error(e)
+            console.print(
+                f"    [bold red]Voiceover failed ({detail}) — aborting video item[/]"
+            )
+            _alert_voiceover_failure(item, detail, config)
+            return False, f"Voiceover failed: {detail}"
 
         # Step 2: Generate AI images (Tier 1 or Tier 2)
         # Slide structure: Title, Hook, Body 1..N — each needs its own image.
@@ -813,6 +900,23 @@ def _get_publisher(platform_name: str):
         raise ValueError(f"Unknown platform: {platform_name}")
 
 
+def _log_skipped_run(reason: str):
+    """Log a run that exited because another run held the queue lock.
+
+    Written to the same daily log as real runs so that a slot skipped for
+    contention is distinguishable from one that never fired at all.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = LOG_DIR / f"{datetime.now().strftime('%Y-%m-%d')}.log"
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "action": "post-today-skipped",
+        "reason": reason,
+    }
+    with open(log_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
 def _log_daily_run(posted: int, failed: int, pending: int, issue_number: int | None):
     """Log the daily run results."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -824,6 +928,30 @@ def _log_daily_run(posted: int, failed: int, pending: int, issue_number: int | N
         "posted": posted,
         "failed": failed,
         "pending": pending,
+    }
+    with open(log_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def _log_orphans(orphans, issue_number: int | None):
+    """Append an orphaned-items record so missed posts leave an audit trail."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = LOG_DIR / f"{datetime.now().strftime('%Y-%m-%d')}.log"
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "action": "orphaned-items",
+        "issue_number": issue_number,
+        "count": len(orphans),
+        "items": [
+            {
+                "id": i.id,
+                "platform": i.platform,
+                "date": i.date,
+                "scheduled_time": i.scheduled_time,
+                "article_title": i.article_title,
+            }
+            for i in orphans
+        ],
     }
     with open(log_file, "a") as f:
         f.write(json.dumps(entry) + "\n")
