@@ -815,9 +815,16 @@ def review_week(queue):
         likes = m.likes if m else 0
         reposts = m.reposts if m else 0
         replies = m.replies if m else 0
+        saves = m.saves if m else 0
+        shares = m.shares if m else 0
 
         type_icon = "🎬" if item.content_type == "video" else "📝"
-        stats = f"L:{likes} R:{reposts} C:{replies} → [bold]{score:.0f}[/bold]"
+        # Saves/shares are Reels-only and were previously folded into
+        # `reposts`; show them explicitly so they stay visible here.
+        stats = f"L:{likes} R:{reposts} C:{replies}"
+        if saves or shares or item.content_type == "video":
+            stats += f" S:{saves} Sh:{shares}"
+        stats += f" → [bold]{score:.0f}[/bold]"
 
         console.print(f"[bold cyan]#{idx}[/bold cyan] {type_icon} [{item.platform}] "
                       f"[bold]{item.article_title}[/bold]")

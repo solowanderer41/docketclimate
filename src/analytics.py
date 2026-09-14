@@ -51,13 +51,32 @@ class PostMetrics:
     views: int | None = None
     reach: int | None = None  # Reels: unique accounts reached (from /insights)
     avg_watch_time: float | None = None  # Reels: avg watch in seconds (from ig_reels_avg_watch_time)
+    saves: int = 0   # Reels: 'saved' insight. Highest-intent signal the format produces.
+    shares: int = 0  # Reels: 'shares' insight — sends to DMs/stories.
     engagement_score: float = 0.0
     hook_variant: int | None = None  # which hook variant (0-4) was used for A/B testing
     fetched_at_hours: int | None = None  # checkpoint: 4, 24, or 48 hours post-publish
 
     def compute_score(self):
-        """Weighted engagement: replies > reposts > likes."""
-        self.engagement_score = self.likes + (self.reposts * 2) + (self.replies * 3)
+        """Weighted engagement: intent-ordered.
+
+        likes(1) < reposts(2) < replies/saves/shares(3). Saves and shares sit
+        at the top because they are what Instagram's ranking actually rewards
+        and they cost the viewer the most deliberate effort — a save is a
+        promise to come back, a share is a personal endorsement.
+
+        Saves were previously folded into `reposts` and scored at 2. They now
+        score at 3 in their own right, so historical Reels scores shift by +1
+        per save (2 saves exist in the whole corpus, so the practical effect
+        on any ranking is nil).
+        """
+        self.engagement_score = (
+            self.likes
+            + (self.reposts * 2)
+            + (self.replies * 3)
+            + (self.saves * 3)
+            + (self.shares * 3)
+        )
         return self.engagement_score
 
 
@@ -101,7 +120,7 @@ def _fetch_bluesky_metrics(uri: str) -> dict:
         return result
     except Exception as e:
         console.print(f"[yellow]Bluesky metrics failed for {uri[:60]}: {e}[/yellow]")
-        return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+        return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None}
 
 
 def _fetch_twitter_metrics(tweet_id: str) -> dict:
@@ -144,11 +163,11 @@ def _fetch_twitter_metrics(tweet_id: str) -> dict:
                 "views": metrics.get("impression_count"),  # May be None on Basic tier
             }
 
-        return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+        return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None}
 
     except Exception as e:
         console.print(f"[yellow]Twitter metrics failed for {tweet_id}: {e}[/yellow]")
-        return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+        return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None}
 
 
 def _fetch_threads_metrics(thread_id: str) -> dict:
@@ -161,7 +180,7 @@ def _fetch_threads_metrics(thread_id: str) -> dict:
     try:
         access_token = os.getenv("META_ACCESS_TOKEN")
         if not access_token:
-            return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+            return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None}
 
         # Clean thread_id
         if isinstance(thread_id, str) and "thread_id" in thread_id:
@@ -199,7 +218,7 @@ def _fetch_threads_metrics(thread_id: str) -> dict:
 
     except Exception as e:
         console.print(f"[yellow]Threads metrics failed for {thread_id}: {e}[/yellow]")
-        return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+        return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None}
 
 
 def _fetch_reels_metrics(media_id: str) -> dict:
@@ -221,7 +240,7 @@ def _fetch_reels_metrics(media_id: str) -> dict:
     try:
         access_token = os.getenv("META_INSTAGRAM_ACCESS_TOKEN") or os.getenv("META_ACCESS_TOKEN")
         if not access_token:
-            return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+            return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None}
 
         # Clean media_id — handle "reels:123" prefix and dict strings
         if isinstance(media_id, str):
@@ -249,7 +268,7 @@ def _fetch_reels_metrics(media_id: str) -> dict:
         if basic_resp.status_code == 400:
             err = basic_resp.json().get("error", {}).get("message", "unknown")
             console.print(f"[yellow]Reels basic metrics error: {err}[/yellow]")
-            return {"likes": 0, "reposts": 0, "replies": 0, "views": None}
+            return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None}
         basic_resp.raise_for_status()
         basic = basic_resp.json()
 
@@ -257,7 +276,7 @@ def _fetch_reels_metrics(media_id: str) -> dict:
         insights_resp = requests.get(
             f"{base_url}/insights",
             params={
-                "metric": "views,reach,saved,ig_reels_avg_watch_time",
+                "metric": "views,reach,saved,shares,ig_reels_avg_watch_time",
                 "access_token": access_token,
             },
             timeout=10,
@@ -279,7 +298,13 @@ def _fetch_reels_metrics(media_id: str) -> dict:
 
         result = {
             "likes": basic.get("like_count", 0),
-            "reposts": insights.get("saved", 0),  # saves = highest-intent Reels signal
+            # Reels have no "repost" concept. Saves and shares are their own
+            # signals and are recorded as such — folding saves into `reposts`
+            # (as this did until 2026-09-14) made them invisible in every
+            # report and scored them as if they were a Bluesky repost.
+            "reposts": 0,
+            "saves": insights.get("saved", 0),
+            "shares": insights.get("shares", 0),
             "replies": basic.get("comments_count", 0),
             "views": insights.get("views") or None,
             "reach": reach if reach is not None else None,
@@ -287,14 +312,14 @@ def _fetch_reels_metrics(media_id: str) -> dict:
         }
         console.print(
             f"[dim]  Reels: {result['likes']}L {result['views'] or '?'}V "
-            f"{result['replies']}C {result['reposts']}S "
+            f"{result['replies']}C {result['saves']}S {result['shares']}Sh "
             f"| reach {reach or '?'} | avg watch {avg_watch_label}[/dim]"
         )
         return result
 
     except Exception as e:
         console.print(f"[yellow]Reels metrics failed for {media_id}: {e}[/yellow]")
-        return {"likes": 0, "reposts": 0, "replies": 0, "views": None, "reach": None, "avg_watch_time": None}
+        return {"likes": 0, "reposts": 0, "saves": 0, "shares": 0, "replies": 0, "views": None, "reach": None, "avg_watch_time": None}
 
 
 # Platform fetcher dispatch
@@ -373,6 +398,8 @@ def fetch_metrics(queue_path: Path, delay_hours: int = 48) -> list[PostMetrics]:
             fetched_at=datetime.now().isoformat(),
             likes=raw["likes"],
             reposts=raw["reposts"],
+            saves=raw.get("saves", 0),
+            shares=raw.get("shares", 0),
             replies=raw["replies"],
             views=raw.get("views"),
             reach=raw.get("reach"),
@@ -391,7 +418,11 @@ def fetch_metrics(queue_path: Path, delay_hours: int = 48) -> list[PostMetrics]:
     return results
 
 
-_ENGAGEMENT_FIELDS = ("likes", "reposts", "replies", "views", "reach", "avg_watch_time")
+# Fields compared to decide whether a re-fetch changed anything. Omitting
+# saves/shares here would mean a newly-saved Reel is silently not persisted.
+_ENGAGEMENT_FIELDS = (
+    "likes", "reposts", "saves", "shares", "replies", "views", "reach", "avg_watch_time",
+)
 
 
 def _engagement_changed(old: PostMetrics, new: PostMetrics) -> bool:
@@ -513,6 +544,8 @@ def fetch_metrics_at_interval(
             fetched_at=datetime.now().isoformat(),
             likes=raw["likes"],
             reposts=raw["reposts"],
+            saves=raw.get("saves", 0),
+            shares=raw.get("shares", 0),
             replies=raw["replies"],
             views=raw.get("views"),
             reach=raw.get("reach"),
@@ -520,7 +553,7 @@ def fetch_metrics_at_interval(
             hook_variant=getattr(item, "hook_variant", None),
             fetched_at_hours=checkpoint_hours,
         )
-        m.engagement_score = m.likes + (m.reposts * 2) + (m.replies * 3)
+        m.compute_score()
         metrics.append(m)
 
     return metrics
@@ -999,16 +1032,25 @@ def _build_report_data(
     total_likes = sum(m.likes for m in week_metrics)
     total_reposts = sum(m.reposts for m in week_metrics)
     total_replies = sum(m.replies for m in week_metrics)
-    total_engagement = total_likes + total_reposts + total_replies
+    total_saves = sum(m.saves for m in week_metrics)
+    total_shares = sum(m.shares for m in week_metrics)
+    total_engagement = (
+        total_likes + total_reposts + total_replies + total_saves + total_shares
+    )
     avg_score = sum(m.engagement_score for m in week_metrics) / len(week_metrics) if week_metrics else 0
 
     # Platform breakdown
-    platform_data = defaultdict(lambda: {"likes": 0, "reposts": 0, "replies": 0, "scores": [], "count": 0})
+    platform_data = defaultdict(lambda: {
+        "likes": 0, "reposts": 0, "replies": 0, "saves": 0, "shares": 0,
+        "scores": [], "count": 0,
+    })
     for m in week_metrics:
         d = platform_data[m.platform]
         d["likes"] += m.likes
         d["reposts"] += m.reposts
         d["replies"] += m.replies
+        d["saves"] += m.saves
+        d["shares"] += m.shares
         d["scores"].append(m.engagement_score)
         d["count"] += 1
 
@@ -1019,8 +1061,12 @@ def _build_report_data(
             "likes": d["likes"],
             "reposts": d["reposts"],
             "replies": d["replies"],
+            "saves": d["saves"],
+            "shares": d["shares"],
             "avg_score": sum(d["scores"]) / len(d["scores"]) if d["scores"] else 0,
-            "total_engagement": d["likes"] + d["reposts"] + d["replies"],
+            "total_engagement": (
+                d["likes"] + d["reposts"] + d["replies"] + d["saves"] + d["shares"]
+            ),
         }
 
     # Section breakdown
@@ -1138,6 +1184,8 @@ def _build_report_data(
             "total_likes": total_likes,
             "total_reposts": total_reposts,
             "total_replies": total_replies,
+            "total_saves": total_saves,
+            "total_shares": total_shares,
             "total_engagement": total_engagement,
             "avg_engagement_score": avg_score,
         },
@@ -1191,7 +1239,9 @@ def _print_weekly_report(report: dict, queue) -> None:
         f"  Posts tracked: {summary.get('total_posts_tracked', 0)} | "
         f"Likes: {summary.get('total_likes', 0)} | "
         f"Reposts: {summary.get('total_reposts', 0)} | "
-        f"Replies: {summary.get('total_replies', 0)}"
+        f"Replies: {summary.get('total_replies', 0)} | "
+        f"Saves: {summary.get('total_saves', 0)} | "
+        f"Shares: {summary.get('total_shares', 0)}"
     )
     console.print(
         f"  Total interactions: [bold]{summary.get('total_engagement', 0)}[/bold] | "
