@@ -10,6 +10,7 @@ import errno
 import fcntl
 import json
 import os
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -914,9 +915,39 @@ def print_queue_status(queue: WeekQueue):
         )
 
 
+def _queue_sort_key(path: Path) -> tuple:
+    """Order queue files by the week they cover, not by filesystem mtime.
+
+    Reads ``week_start`` from the file, falling back to the ISO date in the
+    filename (``week_48_2026-09-14.json``), and only then to mtime.
+    """
+    try:
+        with open(path) as f:
+            week_start = json.load(f).get("week_start") or ""
+        if week_start:
+            return (2, week_start, path.stat().st_mtime)
+    except (OSError, json.JSONDecodeError, AttributeError):
+        pass
+
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", path.name)
+    if m:
+        return (1, m.group(1), path.stat().st_mtime)
+
+    return (0, "", path.stat().st_mtime)
+
+
 def find_active_queue(queue_dir: Path) -> Path | None:
-    """Find the most recent queue JSON file."""
+    """Find the queue file covering the most recent week.
+
+    Selection is by the queue's own ``week_start``, NOT by file mtime.
+    mtime is not a property of the content: any git operation that writes a
+    tracked queue file — checkout, rebase, clone, stash pop — resets it. On
+    2026-09-14 a rebase touched a dozen archived queue files and this
+    function began returning a four-month-old May queue, which would have
+    silently posted nothing on the next scheduled run because no item in it
+    was dated today.
+    """
     if not queue_dir.exists():
         return None
-    files = sorted(queue_dir.glob("week_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted(queue_dir.glob("week_*.json"), key=_queue_sort_key, reverse=True)
     return files[0] if files else None
