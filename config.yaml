@@ -29,7 +29,7 @@ platforms:
     type: text
 
   threads:
-    enabled: true
+    enabled: false  # deprecated 2026-09-14 — 3 engagement actions across 182 posts (1.6% of posts saw any reaction); 726 views but effectively zero reaction
     max_chars: 500
     type: text
 

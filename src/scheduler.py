@@ -6,7 +6,13 @@ into a JSON queue file. Each day gets a balanced mix of
 feature articles and news cards.
 """
 
+import errno
+import fcntl
 import json
+import os
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,6 +35,145 @@ console = Console()
 WEEKDAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday"]
 ALL_DAY_NAMES = ["sunday"] + WEEKDAY_NAMES  # includes pre-issue Sunday
 WEEKDAY_SHORT = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4}
+
+QUEUE_LOCK_NAME = ".queue.lock"
+
+# Depth of queue locks held by THIS process, keyed by resolved lock path.
+# flock is held per open-file-description, so a second acquisition in the same
+# process would block against its own first one. Callers nest without knowing
+# it (run_daily locks internally, and a CLI command may also be decorated), so
+# track depth and only touch the kernel lock at depth 0.
+_held_locks: dict[str, int] = {}
+_held_locks_guard = threading.Lock()
+
+
+class QueueLockBusy(RuntimeError):
+    """Raised when another process already holds the queue lock."""
+
+
+@contextmanager
+def queue_lock(queue_dir: Path, timeout: float = 0.0):
+    """Hold an exclusive advisory lock on the queue for a whole run.
+
+    The queue file is read-modify-write: a run loads every item into memory,
+    works for minutes (rendering video, uploading, and sleeping out the retry
+    delay), then writes all items back. Two overlapping runs therefore both
+    see an item as ``pending`` and both post it, and whichever finishes last
+    overwrites the other's results — silently resurrecting posted items or
+    discarding them.
+
+    Making individual writes atomic does not help, because the window is
+    between the read and the write, not inside the write. The only fix that
+    closes it is serialising the runs themselves, which is what this does.
+
+    Uses ``fcntl.flock`` on a lock file rather than a PID file: the kernel
+    releases an flock when the holding process exits, so a crashed or killed
+    run cannot leave a stale lock that blocks every subsequent run.
+
+    Args:
+        queue_dir: Directory holding the queue files; the lock lives here.
+        timeout: Seconds to wait for the lock. The default of 0 fails
+            immediately, which is what a scheduled run wants — stacking up
+            blocked runs behind a slow one is worse than skipping this slot,
+            since the next slot is minutes away. Interactive callers can pass
+            a few seconds to ride out a run that is finishing up.
+
+    Raises:
+        QueueLockBusy: If the lock is held and `timeout` expires.
+    """
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = queue_dir / QUEUE_LOCK_NAME
+    key = os.path.realpath(lock_path)
+
+    # Already held further up this call stack: nest instead of deadlocking
+    # against ourselves.
+    with _held_locks_guard:
+        nested = _held_locks.get(key, 0) > 0
+        if nested:
+            _held_locks[key] += 1
+
+    if nested:
+        try:
+            yield lock_path
+        finally:
+            with _held_locks_guard:
+                _held_locks[key] -= 1
+        return
+
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    deadline = time.monotonic() + timeout
+    acquired = False
+
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError as e:
+                # Only EAGAIN/EWOULDBLOCK (and EACCES on some platforms) mean
+                # "someone else holds it". Anything else is a real fault —
+                # ENOLCK/EOPNOTSUPP from a filesystem without advisory locking,
+                # EBADF from a bad descriptor. Reporting those as contention
+                # would silently stop all posting while telling the operator to
+                # look for a second process that does not exist.
+                if e.errno not in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES):
+                    raise
+                if time.monotonic() >= deadline:
+                    # State the fact only. Each caller adds its own
+                    # consequence — a scheduled run skips the slot, an
+                    # interactive command tells the operator to retry.
+                    raise QueueLockBusy(
+                        f"Queue is locked by another run "
+                        f"({_read_lock_holder(lock_path)})."
+                    )
+                time.sleep(0.25)
+
+        with _held_locks_guard:
+            _held_locks[key] = 1
+
+        # Record the holder so a blocked run can say who it is waiting on.
+        try:
+            os.ftruncate(fd, 0)
+            os.write(
+                fd,
+                f"pid={os.getpid()} started={datetime.now().isoformat()}\n".encode(),
+            )
+            os.fsync(fd)
+        except OSError:
+            pass  # Diagnostics only — never fail a run over this.
+
+        yield lock_path
+
+    finally:
+        # Nested holders have already decremented back to 1 by now; if
+        # acquisition failed the key was never registered and this is a no-op.
+        with _held_locks_guard:
+            _held_locks.pop(key, None)
+        try:
+            # Only unlock what we actually took. Unlocking on the failed-
+            # acquisition path is not merely redundant: if that call raises it
+            # replaces the in-flight QueueLockBusy, so the caller sees a bare
+            # OSError instead of the contention it needs to handle.
+            # Errors here are swallowed because closing the fd releases the
+            # flock regardless, and a failed unlock must never mask the real
+            # exception leaving this block.
+            if acquired:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+        finally:
+            os.close(fd)
+
+
+def _read_lock_holder(lock_path: Path) -> str:
+    """Best-effort description of the process holding the lock."""
+    try:
+        text = lock_path.read_text().strip()
+        return text or "unknown holder"
+    except OSError:
+        return "unknown holder"
 
 
 @dataclass
@@ -77,9 +222,30 @@ class WeekQueue:
         }
 
     def save(self, path: Path):
+        """Write the queue to disk atomically.
+
+        Serialises to a temporary file in the same directory and then
+        ``os.replace``s it into place, which is atomic on POSIX. A crash or
+        kill partway through a write therefore leaves the previous queue
+        intact rather than a truncated file — the queue is the only record of
+        what has already been posted, so a corrupt one risks double-posting
+        every item in the week.
+
+        Note this makes each individual write atomic; it does not make
+        read-modify-write cycles safe against concurrent runs. Callers that
+        mutate the queue must hold :func:`queue_lock`.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
+        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+        try:
+            with open(tmp, "w") as f:
+                json.dump(self.to_dict(), f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
         console.print(f"[green]Queue saved to {path}[/green]")
 
     @classmethod

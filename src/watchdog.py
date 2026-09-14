@@ -4,6 +4,7 @@ Health watchdog for The Docket.
 Runs lightweight checks on the pipeline and reports problems:
 - Did today's queue items get posted?
 - Are Meta tokens still valid?
+- Can the ElevenLabs credential actually synthesize speech?
 - Does an active queue exist with future items?
 - Has launchd run recently?
 - Is disk space adequate?
@@ -21,8 +22,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
+
+# The credential check reads os.getenv directly, so .env must be loaded even
+# when watchdog is imported outside the main CLI entry point. Idempotent, and
+# does not override variables already set in the environment.
+load_dotenv()
 
 console = Console()
 
@@ -161,6 +168,115 @@ def _check_token_health() -> dict:
             "status": "warn",
             "detail": f"Check error: {e}",
         }
+
+
+def _check_voiceover_credential(config: dict) -> dict:
+    """Check that the ElevenLabs credential can actually synthesize speech.
+
+    Probes with a real two-character TTS request rather than an account
+    endpoint. A scoped key carrying ``text_to_speech`` but not ``user_read``
+    returns 401 on ``/v1/user`` while working perfectly for the pipeline, so
+    an account-endpoint probe would report a permanent false failure.
+
+    Goes through the same SDK call the video pipeline uses, so an SDK-level
+    break fails here too instead of passing a raw-HTTP check that the
+    pipeline would not have survived.
+
+    Costs ~2 characters of quota per run (daily), which is the price of
+    catching a dead credential on day one. A broken key previously went
+    undetected for three weeks because nothing verified it until a Reel
+    was already being rendered.
+    """
+    name = "Voiceover key"
+    try:
+        platforms = config.get("platforms", {})
+        video_enabled = any(
+            p.get("enabled", False) and p.get("type") == "video"
+            for p in platforms.values()
+        )
+        if not video_enabled:
+            return {
+                "name": name,
+                "status": "pass",
+                "detail": "No video platform enabled — skipped",
+            }
+
+        key = os.getenv("ELEVENLABS_API_KEY", "")
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID", "")
+
+        if not key:
+            return {
+                "name": name,
+                "status": "fail",
+                "detail": "ELEVENLABS_API_KEY not set — Reels will abort",
+            }
+        if not voice_id:
+            return {
+                "name": name,
+                "status": "fail",
+                "detail": "ELEVENLABS_VOICE_ID not set — Reels will abort",
+            }
+        # Cheap structural check before spending a request: the secret is
+        # "sk_"-prefixed, and a UUID-shaped value is the key *ID* from the
+        # dashboard, which 400s on every call.
+        if not key.startswith("sk_"):
+            return {
+                "name": name,
+                "status": "fail",
+                "detail": "Key is not 'sk_'-prefixed — looks like a key ID, not a secret",
+            }
+
+        from elevenlabs import ElevenLabs
+
+        client = ElevenLabs(api_key=key, timeout=20)
+        audio = b"".join(
+            client.text_to_speech.convert(
+                voice_id=voice_id,
+                text="ok",
+                model_id=os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2"),
+                output_format=os.getenv(
+                    "ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128"
+                ),
+            )
+        )
+
+        if not audio:
+            return {
+                "name": name,
+                "status": "fail",
+                "detail": "TTS returned no audio — Reels would abort",
+            }
+
+        return {
+            "name": name,
+            "status": "pass",
+            "detail": f"TTS OK ({len(audio) / 1024:.1f} KB, voice {voice_id[:8]}…)",
+        }
+
+    except Exception as e:
+        try:
+            from src.video.voiceover import _concise_error
+
+            detail = _concise_error(e, limit=120)
+        except Exception:
+            detail = str(e)[:120]
+
+        # Separate a permanently broken setup from a transient blip. Only the
+        # former should page as critical — a warning that fires on every
+        # network hiccup is noise, and noise is what gets alerts ignored.
+        #
+        # A 4xx means the request or credential is wrong and will stay wrong
+        # until someone changes it: 400/401 bad key, 403 missing scope, 404
+        # voice deleted, 422 bad model. Each aborts every Reel. The exception
+        # is 429 (rate limited), which clears on its own — as do 5xx outages
+        # and connection errors, which carry no status_code at all.
+        code = getattr(e, "status_code", None)
+        if isinstance(code, int) and 400 <= code < 500 and code != 429:
+            status = "fail"
+        else:
+            status = "warn"
+
+        return {"name": name, "status": status, "detail": f"TTS probe: {detail}"}
 
 
 def _check_active_queue() -> dict:
@@ -311,6 +427,7 @@ def run_health_check(config: dict | None = None) -> dict:
     checks = [
         _check_posts_today(config),
         _check_token_health(),
+        _check_voiceover_credential(config),
         _check_active_queue(),
         _check_last_run(),
         _check_disk_space(),

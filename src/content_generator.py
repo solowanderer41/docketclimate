@@ -33,6 +33,23 @@ _feature_vs_news_cache: dict[str, float] | None = None
 _hook_variant_log: dict[str, int] = {}
 # Variant selection weights loaded once per run from analytics/variant_weights.json
 _variant_weights: list[float] | None = None
+# Anthropic model for hook/script generation. Override with DOCKET_MODEL env var
+# when a new Sonnet lands or when swapping to Opus for higher-quality copy.
+CLAUDE_MODEL = os.environ.get("DOCKET_MODEL", "claude-sonnet-5")
+
+
+def _extract_text(response) -> str:
+    """Return the first text block from a Claude response.
+
+    Newer models can emit ThinkingBlock items before the TextBlock, so we
+    can't assume content[0] is always text.
+    """
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    raise ValueError("No text block in Claude response")
+
+
 console = Console()
 # Platform character limits
 PLATFORM_LIMITS = {
@@ -806,11 +823,11 @@ Rewrite the hook to match the quality and tone of the exemplars above. Keep the 
 NEVER USE: "Everyone's talking about...", "They're missing the real story", "Nobody's talking about...", "Here's what they don't want you to know", or any formulaic engagement-bait opener. Lead with substance, not cleverness.
 Must fit in {max_chars} characters (including line breaks). Return ONLY the rewritten hook text, no explanation."""
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=CLAUDE_MODEL,
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
         )
-        refined = response.content[0].text.strip()
+        refined = _extract_text(response).strip()
         # Validate length — fall back if Claude exceeded the limit
         if len(refined) > max_chars or len(refined) < 20:
             return hook
@@ -924,11 +941,11 @@ Example format: {{"twitter": "hook text...", "bluesky": "hook text...", "threads
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=CLAUDE_MODEL,
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = response.content[0].text.strip()
+        raw = _extract_text(response).strip()
         # Parse JSON — strip markdown fences if present
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
@@ -1483,11 +1500,11 @@ IMAGE PROMPT RULES:
 Return ONLY valid JSON. No markdown, no explanation."""
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=CLAUDE_MODEL,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = response.content[0].text.strip()
+        raw = _extract_text(response).strip()
         _was_truncated = response.stop_reason == "max_tokens"
         if _was_truncated:
             console.print(

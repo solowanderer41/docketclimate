@@ -1,6 +1,7 @@
 """ElevenLabs text-to-speech integration for Docket Social video pipeline."""
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -16,11 +17,40 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
 
+class VoiceoverError(RuntimeError):
+    """Raised when voiceover generation fails completely.
+
+    Signals that a video would ship silent. Callers should abort the item
+    rather than fall back to a silent render — a silent Reel that reports
+    success is indistinguishable from a working one until someone watches it.
+    """
+
+
+def _concise_error(error: Exception, limit: int = 300) -> str:
+    """Shorten an SDK exception for logs, queue ``last_error``, and alerts.
+
+    ElevenLabs errors carry a full response-header dump ahead of the useful
+    part, which is the JSON body. Drop the headers, then bound the length.
+    """
+    text = re.sub(r"headers:\s*\{.*?\},\s*", "", str(error), flags=re.DOTALL)
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def _get_client() -> ElevenLabs:
     """Create and return an authenticated ElevenLabs client."""
     if not ELEVENLABS_API_KEY:
         console.print("[bold red]Error:[/] ELEVENLABS_API_KEY not set in environment.")
         raise EnvironmentError("ELEVENLABS_API_KEY is required. Set it in your .env file.")
+    # ElevenLabs secret keys are "sk_"-prefixed. A UUID-shaped value here is
+    # almost always the key *ID* copied from the dashboard instead of the key,
+    # which 400s on every request. Warn rather than fail — the prefix is a
+    # vendor convention, not a guarantee.
+    if not ELEVENLABS_API_KEY.startswith("sk_"):
+        console.print(
+            "[yellow]Warning:[/] ELEVENLABS_API_KEY does not start with 'sk_' — "
+            "this looks like a key ID, not a secret key. Expect 400s."
+        )
     return ElevenLabs(api_key=ELEVENLABS_API_KEY)
 
 
@@ -92,6 +122,10 @@ def generate_voiceover_per_slide(
 
     Returns:
         List of Paths to generated MP3 files (None for skipped/failed slides).
+
+    Raises:
+        VoiceoverError: If every non-empty slide failed. Partial failure is
+            survivable and only warns; total failure means a silent video.
     """
     if not slide_texts:
         return []
@@ -117,6 +151,7 @@ def generate_voiceover_per_slide(
     )
 
     audio_paths: list[Path | None] = []
+    errors: list[str] = []
 
     for text, label in zip(slide_texts, slide_labels):
         if not text or not text.strip():
@@ -145,11 +180,25 @@ def generate_voiceover_per_slide(
             audio_paths.append(out_path)
 
         except Exception as e:
-            console.print(f"  [red]{label}: failed ({e})[/red]")
+            console.print(f"  [red]{label}: failed ({_concise_error(e)})[/red]")
+            errors.append(f"{label}: {_concise_error(e)}")
             audio_paths.append(None)
 
     ok = sum(1 for p in audio_paths if p)
-    console.print(f"[bold green]Voiceover: {ok}/{len(slide_texts)} segments generated[/]")
+    expected = sum(1 for t in slide_texts if t and t.strip())
+
+    if expected and ok == 0:
+        console.print(
+            f"[bold red]Voiceover: 0/{expected} segments generated — "
+            f"aborting rather than shipping a silent video[/]"
+        )
+        detail = errors[0] if errors else "no segments produced"
+        raise VoiceoverError(
+            f"All {expected} voiceover segments failed. First error: {detail}"
+        )
+
+    colour = "green" if ok == expected else "yellow"
+    console.print(f"[bold {colour}]Voiceover: {ok}/{len(slide_texts)} segments generated[/]")
     return audio_paths
 
 
